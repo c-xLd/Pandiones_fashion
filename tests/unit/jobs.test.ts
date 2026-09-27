@@ -111,3 +111,29 @@ describe("quota classification", () => {
     expect(classifyError(rate)).toEqual({ classification: "transient", code: "http_429", status: 429 });
   });
 });
+
+describe("rate-limit retries", () => {
+  it("parses the provider retry hint", async () => {
+    const { parseRetryHintMs } = await import("@/lib/domain/jobs");
+    expect(parseRetryHintMs("Quota exceeded ... Please retry in 18.384170605s.")).toBe(18385);
+    expect(parseRetryHintMs("no hint")).toBeUndefined();
+  });
+
+  it("refunds the attempt and waits for the hint plus jitter while within the grace period", () => {
+    const now = new Date("2026-09-27T21:00:00Z");
+    const err = new ProviderError("429", "transient", "http_429", {}, 18_000);
+    const d = patchForFailure({ attempts: 3, max_attempts: 3, provider_operation: null, created_at: "2026-09-27T20:55:00Z" }, err, now, () => 0.5);
+    expect(d.final).toBe(false);
+    expect(d.patch.status).toBe("queued");
+    expect(d.patch.attempts).toBe(2);
+    expect(Date.parse(d.patch.run_after as string) - now.getTime()).toBe(18_000 + 7_500);
+  });
+
+  it("falls back to normal attempt accounting after the grace period", () => {
+    const now = new Date("2026-09-27T21:00:00Z");
+    const err = new ProviderError("429", "transient", "http_429", {}, 18_000);
+    const d = patchForFailure({ attempts: 3, max_attempts: 3, provider_operation: null, created_at: "2026-09-27T20:00:00Z" }, err, now, () => 0.5);
+    expect(d.final).toBe(true);
+    expect(d.patch.status).toBe("failed");
+  });
+});

@@ -98,6 +98,17 @@ export function decideRetry(input: {
   return { action: "retry", delayMs: Math.max(backoff, input.retryAfterMs ?? 0) };
 }
 
+/** Rate-limit retries do not consume attempts for this long after enqueueing. */
+export const RATE_LIMIT_GRACE_MS = 30 * 60_000;
+
+/** Provider hint such as "Please retry in 18.38s" → milliseconds. */
+export function parseRetryHintMs(message: string): number | undefined {
+  const match = /retry in\s+([\d.]+)\s*s/i.exec(message);
+  if (!match) return undefined;
+  const seconds = Number(match[1]);
+  return Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : undefined;
+}
+
 /** Strip anything that could be a credential from error text before storing it. */
 export function sanitizeErrorMessage(message: string): string {
   return message

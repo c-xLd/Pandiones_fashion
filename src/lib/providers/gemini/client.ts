@@ -1,7 +1,7 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import { geminiConfig, type GeminiConfig } from "@/lib/env";
-import { ProviderError, classifyError, sanitizeErrorMessage } from "@/lib/domain/jobs";
+import { ProviderError, parseRetryHintMs, classifyError, sanitizeErrorMessage } from "@/lib/domain/jobs";
 import type {
   ImageGenerationProvider,
   ImageGenerationRequest,
@@ -45,7 +45,8 @@ export function toProviderError(error: unknown, context: string): ProviderError 
   const raw = error instanceof Error ? error.message : String(error);
   const message = sanitizeErrorMessage(raw);
   let retryAfterMs: number | undefined;
-  if (status === 429) retryAfterMs = 30_000;
+  // Honour the provider's retry hint (free-tier per-minute limits).
+  if (status === 429) retryAfterMs = parseRetryHintMs(raw) ?? 30_000;
   return new ProviderError(`${context}: ${message}`, classification, code, { status: status ?? null }, retryAfterMs);
 }
 

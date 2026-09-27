@@ -1,4 +1,4 @@
-import { ProviderError, classifyError, decideRetry, sanitizeErrorMessage } from "@/lib/domain/jobs";
+import { ProviderError, RATE_LIMIT_GRACE_MS, classifyError, decideRetry, sanitizeErrorMessage } from "@/lib/domain/jobs";
 import type { JobRow } from "@/lib/types";
 
 /**
@@ -15,6 +15,7 @@ export type JobPatch = Partial<
   Pick<
     JobRow,
     | "status"
+    | "attempts"
     | "progress"
     | "provider_request_id"
     | "provider_operation"
@@ -60,7 +61,7 @@ export interface FailureDecision {
 }
 
 export function patchForFailure(
-  job: Pick<JobRow, "attempts" | "max_attempts" | "provider_operation">,
+  job: Pick<JobRow, "attempts" | "max_attempts" | "provider_operation"> & Partial<Pick<JobRow, "created_at">>,
   error: unknown,
   now: Date,
   random: () => number = Math.random,
@@ -82,6 +83,28 @@ export function patchForFailure(
         locked_until: new Date(now.getTime() + Math.max(30_000, retryAfterMs ?? 0)).toISOString(),
         error_code: code,
         error_message: message,
+      },
+    };
+  }
+
+  // Rate limits (e.g. a free tier's requests-per-minute) are not the job's
+  // fault: wait for the provider's hint plus jitter and refund the attempt,
+  // for a bounded time after the job was enqueued.
+  const createdAt = job.created_at ? Date.parse(job.created_at) : Number.NaN;
+  if (code === "http_429" && classification === "transient" && now.getTime() - createdAt < RATE_LIMIT_GRACE_MS) {
+    const delayMs = (retryAfterMs ?? 30_000) + Math.round(random() * 15_000);
+    return {
+      final: false,
+      logLevel: "warn",
+      patch: {
+        status: "queued",
+        attempts: Math.max(0, job.attempts - 1),
+        run_after: new Date(now.getTime() + delayMs).toISOString(),
+        error_code: code,
+        error_message: message,
+        error_details: { ...details, classification, attempt: job.attempts, rateLimited: true },
+        locked_by: null,
+        locked_until: null,
       },
     };
   }
