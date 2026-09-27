@@ -147,6 +147,8 @@ export const tr: typeof en = {
     moreDetails: "Ek bilgiler (isteğe bağlı)",
   },
   create: {
+    remove: "Kaldır",
+    clearFailed: "Başarısızları temizle ({n})",
     saveModel: "Bu modeli kaydet",
     saveModelBody: "Bu fotoğraftaki kişiyi model olarak kaydedin, sonraki çekimlerde tekrar kullanın. Fotoğraf, modelin kimlik referansı olur.",
     saveModelName: "Model adı (isteğe bağlı)",

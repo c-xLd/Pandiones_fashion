@@ -17,6 +17,7 @@ import {
 } from "@/lib/domain/schemas";
 import { planPhotoSession, randomModelPersona } from "@/lib/domain/photo-session";
 import { geminiConfig, imageGenerationConfig } from "@/lib/env";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ActionResult, JobRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
 import { UserFacingError, check, runAction, toActionError } from "../action";
@@ -452,5 +453,33 @@ export async function deletePreset(presetId: string): Promise<ActionResult> {
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "preset.deleted", entityType: "shoot_preset", entityId: presetId });
     revalidatePath("/presets");
     return undefined;
+  });
+}
+
+const dismissSchema = z.object({ jobIds: z.array(z.uuid()).max(200).optional(), allFailed: z.boolean().default(false) });
+
+/**
+ * Hide failed/cancelled generation jobs from the create canvas. Rows are kept
+ * for history and cost reporting. Users cannot update jobs directly (RLS), so
+ * this runs with the service role after the editor check, scoped to the org.
+ */
+export async function dismissJobs(input: z.input<typeof dismissSchema>): Promise<ActionResult<{ dismissed: number }>> {
+  return runAction("dismissJobs", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("mutate", ctx.userId);
+    const data = dismissSchema.parse(input);
+    if (!data.allFailed && !data.jobIds?.length) return { dismissed: 0 };
+    const org = ctx.org.organizationId;
+    let query = getSupabaseAdmin()
+      .from("generation_jobs")
+      .update({ dismissed_at: new Date().toISOString() })
+      .eq("organization_id", org)
+      .in("status", ["failed", "cancelled"])
+      .is("dismissed_at", null);
+    if (!data.allFailed) query = query.in("id", data.jobIds ?? []);
+    const rows = check(await query.select("id"), "Dismiss jobs") as { id: string }[];
+    await audit({ organizationId: org, actorId: ctx.userId, action: "jobs.dismissed", entityType: "generation_job", entityId: rows[0]?.id ?? null, metadata: { count: rows.length, allFailed: data.allFailed } });
+    revalidatePath("/");
+    return { dismissed: rows.length };
   });
 }

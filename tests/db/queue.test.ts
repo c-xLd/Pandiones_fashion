@@ -161,6 +161,18 @@ describe.skipIf(!ADMIN_URL)("generation job queue", () => {
       expect(polled.provider_operation).toBe("operations/xyz");
     });
 
+    it("failed jobs can be dismissed by the service role but not by users", async () => {
+      const job = await insertJob(editor, org);
+      await asService(db.pool, (c) => c.query("update generation_jobs set status = 'failed', error_code = 'x' where id = $1", [job.id]));
+      await expectDbError(
+        asUser(db.pool, editor, (c) => c.query("update generation_jobs set dismissed_at = now() where id = $1", [job.id])),
+        /permission denied/,
+      );
+      const rows = await asService(db.pool, async (c) => (await c.query("update generation_jobs set dismissed_at = now() where id = $1 returning status, dismissed_at", [job.id])).rows);
+      expect(rows[0].status).toBe("failed");
+      expect(rows[0].dismissed_at).not.toBeNull();
+    });
+
     it("claim_jobs is not callable by users", async () => {
       await expectDbError(asUser(db.pool, owner, (c) => c.query("select * from claim_jobs('x', 1, 60, 1)")), /permission denied/);
     });

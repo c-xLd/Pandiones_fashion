@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { after } from "next/server";
 import { kickWorker } from "@/server/jobs/kick";
-import { AlertTriangle, Clapperboard, Loader2 } from "lucide-react";
+import { Clapperboard, Loader2 } from "lucide-react";
 import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { budgetState } from "@/lib/domain/costs";
@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { QcBadge, StatusBadge } from "@/components/studio/status-badge";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 import { MediaTile } from "./_create/media-tile";
+import { ClearFailedButton, FailedTile } from "./_create/failed-tile";
 import { Composer } from "./_create/composer";
 
 export const generateMetadata = pageMetadata((d) => d.create.metaTitle);
@@ -58,9 +59,10 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
       .eq("organization_id", org)
       .in("job_type", [...GENERATION_TYPES])
       .eq("status", "failed")
-      .gte("completed_at", new Date(Date.now() - 6 * 3600_000).toISOString())
+      .is("dismissed_at", null)
+      .gte("completed_at", new Date(Date.now() - 24 * 3600_000).toISOString())
       .order("created_at", { ascending: false })
-      .limit(4),
+      .limit(24),
     db.from("generation_results").select("id", { count: "exact", head: true }).eq("organization_id", org).eq("review_status", "pending"),
     canEdit
       ? db
@@ -197,6 +199,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                 {fmt(t.awaitingReview, { n: pendingReview.count ?? 0 })}
               </Link>
             )}
+            {canEdit && failed.length > 0 && !kind && <ClearFailedButton count={failed.length} />}
             <div className="ml-auto">
               <AutoRefresh active={active.length > 0} />
             </div>
@@ -229,16 +232,13 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                 ))}
               {!kind &&
                 failed.map((j) => (
-                  <Link
+                  <FailedTile
                     key={j.id}
-                    href="/jobs?status=failed"
-                    className="relative mb-3 flex break-inside-avoid flex-col items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-center"
-                    style={{ aspectRatio: jobAspect(j.config, j.job_type) }}
-                  >
-                    <AlertTriangle className="h-5 w-5 text-destructive" />
-                    <span className="text-sm font-medium">{t.failed}</span>
-                    <span className="line-clamp-3 text-xs text-muted-foreground">{jobErrorLabel(d, j.error_code) ?? j.error_code}</span>
-                  </Link>
+                    jobId={j.id}
+                    aspect={jobAspect(j.config, j.job_type)}
+                    reason={jobErrorLabel(d, j.error_code) ?? j.error_code ?? ""}
+                    canEdit={canEdit}
+                  />
                 ))}
               {rows.map((r) => {
                 const title = [shotLabel(d, r.shot_type), locationLabel(r.settings)].filter(Boolean).join(" · ") || d.enums.mediaKind[r.kind];

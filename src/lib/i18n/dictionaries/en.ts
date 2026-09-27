@@ -149,6 +149,8 @@ export const en = {
     moreDetails: "More details (optional)",
   },
   create: {
+    remove: "Remove",
+    clearFailed: "Clear failed ({n})",
     saveModel: "Save this model",
     saveModelBody: "Save the person in this photo as a model and reuse them in future shoots. The photo becomes the model's identity reference.",
     saveModelName: "Model name (optional)",
