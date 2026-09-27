@@ -1,5 +1,7 @@
 "use server";
 
+import { getI18n } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ORG_ROLES } from "@/lib/domain/schemas";
@@ -49,7 +51,7 @@ export async function updateOrganizationSettings(_prev: SettingsFormState, formD
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "organization.settings_updated", entityType: "organization", entityId: ctx.org.organizationId, metadata: { budget: input.monthlyBudgetUsd, hardLimit: input.budgetHardLimit } });
     revalidatePath("/settings");
     revalidatePath("/costs");
-    return { ok: true, message: "Settings saved." };
+    return { ok: true, message: (await getI18n()).d.settings.saved };
   } catch (error) {
     return toActionError(error, "updateOrganizationSettings");
   }
@@ -66,20 +68,21 @@ export async function addMember(_prev: SettingsFormState, formData: FormData): P
     const ctx = await requireOrgContext("admin");
     await enforceRateLimit("mutate", ctx.userId);
     const input = memberSchema.parse({ email: formData.get("email"), role: formData.get("role") });
-    if (input.role === "owner" && ctx.org.role !== "owner") throw new UserFacingError("Only owners can add owners.");
+    if (input.role === "owner" && ctx.org.role !== "owner") throw new UserFacingError("ownersOnlyAdd");
     const admin = getSupabaseAdmin();
     const userId = await findUserIdByEmail(input.email);
     if (!userId) {
-      throw new UserFacingError("No account exists for that email. Ask the person to sign up first, then add them.");
+      throw new UserFacingError("noAccount");
     }
     const { error } = await admin
       .from("organization_members")
       .insert({ organization_id: ctx.org.organizationId, user_id: userId, role: input.role });
-    if (error?.code === "23505") throw new UserFacingError("That user is already a member.");
+    if (error?.code === "23505") throw new UserFacingError("alreadyMember");
     if (error) throw new Error(error.message);
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "member.added", entityType: "organization_member", metadata: { role: input.role } });
     revalidatePath("/settings");
-    return { ok: true, message: `${input.email} added as ${input.role}.` };
+    const { d } = await getI18n();
+    return { ok: true, message: fmt(d.settings.memberAdded, { email: input.email, role: d.enums.role[input.role] }) };
   } catch (error) {
     return toActionError(error, "addMember");
   }
@@ -119,11 +122,11 @@ export async function updateMemberRole(memberId: string, role: string): Promise<
       .eq("id", z.uuid().parse(memberId))
       .eq("organization_id", ctx.org.organizationId)
       .maybeSingle();
-    if (!member) throw new UserFacingError("Member not found.");
+    if (!member) throw new UserFacingError("memberNotFound");
     const touchesOwner = member.role === "owner" || newRole === "owner";
-    if (touchesOwner && ctx.org.role !== "owner") throw new UserFacingError("Only owners can change owner roles.");
+    if (touchesOwner && ctx.org.role !== "owner") throw new UserFacingError("ownersOnlyChange");
     if (member.role === "owner" && newRole !== "owner" && (await ownerCount(ctx.org.organizationId)) <= 1) {
-      throw new UserFacingError("An organization must keep at least one owner.");
+      throw new UserFacingError("keepOneOwner");
     }
     const { error } = await admin.from("organization_members").update({ role: newRole }).eq("id", member.id);
     if (error) throw new Error(error.message);
@@ -143,10 +146,10 @@ export async function removeMember(memberId: string): Promise<ActionResult> {
       .eq("id", z.uuid().parse(memberId))
       .eq("organization_id", ctx.org.organizationId)
       .maybeSingle();
-    if (!member) throw new UserFacingError("Member not found.");
-    if (member.role === "owner" && !roleAtLeast(ctx.org.role, "owner")) throw new UserFacingError("Only owners can remove owners.");
+    if (!member) throw new UserFacingError("memberNotFound");
+    if (member.role === "owner" && !roleAtLeast(ctx.org.role, "owner")) throw new UserFacingError("ownersOnlyRemove");
     if (member.role === "owner" && (await ownerCount(ctx.org.organizationId)) <= 1) {
-      throw new UserFacingError("An organization must keep at least one owner.");
+      throw new UserFacingError("keepOneOwner");
     }
     const { error } = await admin.from("organization_members").delete().eq("id", member.id);
     if (error) throw new Error(error.message);
@@ -168,23 +171,25 @@ export async function checkProviders(): Promise<ActionResult<ProviderCheck[]>> {
   return runAction("checkProviders", async () => {
     const ctx = await requireOrgContext("admin");
     await enforceRateLimit("analyze", ctx.userId);
+    const { d } = await getI18n();
+    const pc = d.settings.providerChecks;
     const checks: ProviderCheck[] = [];
     let gemini;
     try {
       gemini = geminiConfig();
     } catch (error) {
-      return [{ name: "Gemini", configured: false, ok: false, detail: error instanceof Error ? error.message : "Not configured" }];
+      return [{ name: pc.gemini, configured: false, ok: false, detail: error instanceof Error ? error.message : "Not configured" }];
     }
     const image = await checkGeminiModel(gemini.imageModel, "generateContent");
-    checks.push({ name: `Image model (${gemini.imageModel})`, configured: true, ...image });
+    checks.push({ name: fmt(pc.image, { model: gemini.imageModel }), configured: true, ...image });
     const analysis = await checkGeminiModel(gemini.analysisModel, "generateContent");
-    checks.push({ name: `Analysis model (${gemini.analysisModel})`, configured: true, ...analysis });
+    checks.push({ name: fmt(pc.analysis, { model: gemini.analysisModel }), configured: true, ...analysis });
     const video = videoConfig();
     if (video.provider === "none" || !video.model) {
-      checks.push({ name: "Video", configured: false, ok: false, detail: "VIDEO_PROVIDER is none or VIDEO_MODEL is unset — video studio disabled." });
+      checks.push({ name: pc.videoGeneric, configured: false, ok: false, detail: pc.videoDisabled });
     } else {
       const v = await checkGeminiModel(video.model, "predictLongRunning");
-      checks.push({ name: `Video model (${video.model})`, configured: true, ...v });
+      checks.push({ name: fmt(pc.video, { model: video.model }), configured: true, ...v });
     }
     return checks;
   });

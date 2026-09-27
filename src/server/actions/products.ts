@@ -1,5 +1,7 @@
 "use server";
 
+import { getI18n } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n/config";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -68,11 +70,11 @@ export async function updateProduct(productId: string, _prev: ProductFormState, 
         .select("id"),
       "Update product",
     ) as { id: string }[];
-    if (!rows.length) throw new UserFacingError("Product not found.");
+    if (!rows.length) throw new UserFacingError("productNotFound");
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "product.updated", entityType: "product", entityId: productId });
     revalidatePath(`/products/${productId}`);
     revalidatePath("/products");
-    return { ok: true, message: "Product saved." };
+    return { ok: true, message: (await getI18n()).d.products.saved };
   } catch (error) {
     return toActionError(error, "updateProduct");
   }
@@ -109,7 +111,7 @@ export async function deleteProduct(productId: string): Promise<ActionResult> {
       await ctx.supabase.from("products").delete().eq("id", id).eq("organization_id", ctx.org.organizationId).select("id"),
       "Delete product",
     ) as { id: string }[];
-    if (!deleted.length) throw new UserFacingError("Product not found.");
+    if (!deleted.length) throw new UserFacingError("productNotFound");
     // Source images are removed with the product; generated results are kept
     // (they remain in the media library, detached from the product).
     await removeObjects(assets.flatMap((a) => [a.storage_path, a.thumbnail_path ?? ""]));
@@ -139,14 +141,14 @@ export async function createUploadTarget(
     await enforceRateLimit("upload", ctx.userId);
     const data = uploadTargetSchema.parse(input);
     const declared = validateDeclaredImage({ name: data.fileName, size: data.size, type: data.mimeType });
-    if (!declared.ok) throw new UserFacingError(declared.error);
+    if (!declared.ok) throw new UserFacingError(declared.error, declared.vars);
 
     const table = data.target === "products" ? "products" : "model_profiles";
     const owner = check(
       await ctx.supabase.from(table).select("id").eq("id", data.entityId).eq("organization_id", ctx.org.organizationId).maybeSingle(),
       "Load target",
     );
-    if (!owner) throw new UserFacingError("Target not found.");
+    if (!owner) throw new UserFacingError("targetNotFound");
 
     const path =
       data.target === "products"
@@ -175,7 +177,7 @@ export async function finalizeProductAsset(
     assertUploadPath(data.path, org, "products", data.productId);
 
     const bytes = await downloadObject(data.path).catch(() => {
-      throw new UserFacingError("Upload not found. Please upload the file again.");
+      throw new UserFacingError("uploadNotFound");
     });
     let processed;
     try {
@@ -193,7 +195,7 @@ export async function finalizeProductAsset(
     const sameProduct = dupes.find((d) => d.product_id === data.productId);
     if (sameProduct) {
       await removeObjects([data.path]);
-      throw new UserFacingError("This exact image is already attached to this product.");
+      throw new UserFacingError("duplicateProductImage");
     }
     const other = dupes[0];
     const otherSku = other ? (Array.isArray(other.products) ? other.products[0]?.sku : other.products?.sku) : null;
@@ -223,7 +225,7 @@ export async function finalizeProductAsset(
     ) as ProductAssetRow;
     await audit({ organizationId: org, actorId: ctx.userId, action: "product_asset.uploaded", entityType: "product_asset", entityId: asset.id, metadata: { productId: data.productId, role: data.role, sizeBytes: processed.sizeBytes } });
     revalidatePath(`/products/${data.productId}`);
-    return { asset, duplicate: otherSku ? `Identical image already exists on product ${otherSku}.` : null };
+    return { asset, duplicate: otherSku ? fmt((await getI18n()).d.errors.duplicateOnProduct, { sku: otherSku }) : null };
   });
 }
 
@@ -257,7 +259,7 @@ export async function deleteProductAsset(assetId: string): Promise<ActionResult>
       "Delete asset",
     ) as { product_id: string; storage_path: string; thumbnail_path: string | null }[];
     const row = rows[0];
-    if (!row) throw new UserFacingError("Image not found.");
+    if (!row) throw new UserFacingError("imageNotFound");
     await removeObjects([row.storage_path, row.thumbnail_path ?? ""]);
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "product_asset.deleted", entityType: "product_asset", entityId: assetId });
     revalidatePath(`/products/${row.product_id}`);
@@ -278,7 +280,7 @@ export async function requestAnalysis(productId: string): Promise<ActionResult<{
       await ctx.supabase.from("product_assets").select("id").eq("product_id", id).eq("organization_id", ctx.org.organizationId).order("created_at").limit(8),
       "Load assets",
     ) as { id: string }[];
-    if (!assets.length) throw new UserFacingError("Upload at least one product image before running analysis.");
+    if (!assets.length) throw new UserFacingError("analysisNeedsImages");
     const { jobs } = await enqueueJobs(ctx, [
       {
         jobType: "product_analysis",
@@ -287,6 +289,7 @@ export async function requestAnalysis(productId: string): Promise<ActionResult<{
         idempotencyKey: `analysis:${id}:${randomUUID()}`,
         productId: id,
         inputAssetRefs: assets.map((a) => ({ kind: "product_asset", id: a.id })),
+        config: { language: (await getI18n()).locale },
       },
     ]);
     check(
@@ -323,7 +326,7 @@ export async function saveVerifiedAttributes(productId: string, _prev: ProductFo
     );
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "product.attributes_verified", entityType: "product", entityId: productId });
     revalidatePath(`/products/${productId}`);
-    return { ok: true, message: "Verified attributes saved. They will be used as product facts in future shoots." };
+    return { ok: true, message: (await getI18n()).d.verified.saved };
   } catch (error) {
     return toActionError(error, "saveVerifiedAttributes");
   }

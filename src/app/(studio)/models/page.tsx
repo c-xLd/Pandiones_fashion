@@ -3,6 +3,9 @@ import { Plus, UserRound } from "lucide-react";
 import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import type { ModelProfileRow } from "@/lib/types";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/studio/page-header";
@@ -10,11 +13,12 @@ import { EmptyState } from "@/components/studio/empty-state";
 import { StatusBadge } from "@/components/studio/status-badge";
 import { MediaThumb } from "@/components/studio/media-thumb";
 
-export const metadata = { title: "Models" };
+export const generateMetadata = pageMetadata((d) => d.models.metaTitle);
 
 export default async function ModelsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status } = await searchParams;
   const ctx = await requirePageContext();
+  const { d } = await getI18n();
   let query = ctx.supabase
     .from("model_profiles")
     .select("*, model_profile_assets(thumbnail_path, is_primary)")
@@ -33,35 +37,35 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader
-        title="Model library"
-        description="Reusable adult model profiles with approved reference images for identity consistency."
+        title={d.models.title}
+        description={d.models.description}
         actions={
           canEdit && (
             <Button asChild>
               <Link href="/models/new">
-                <Plus /> New model
+                <Plus /> {d.models.newModel}
               </Link>
             </Button>
           )
         }
       />
       <div className="mb-4 flex gap-2 text-sm">
-        {["all", "active", "draft", "retired"].map((s) => (
+        {(["all", "active", "draft", "retired"] as const).map((s) => (
           <Link
             key={s}
             href={s === "all" ? "/models" : `/models?status=${s}`}
             className={`rounded-md px-3 py-1 ${(status ?? "all") === s ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
           >
-            {s}
+            {s === "all" ? d.models.filterAll : d.enums.modelStatus[s]}
           </Link>
         ))}
       </div>
       {models.length === 0 ? (
         <EmptyState
           icon={UserRound}
-          title="No model profiles"
-          description="Create a profile, then upload consented reference photos or generate a synthetic reference portrait."
-          action={canEdit && <Button asChild size="sm"><Link href="/models/new">New model</Link></Button>}
+          title={d.models.emptyTitle}
+          description={d.models.emptyBody}
+          action={canEdit && <Button asChild size="sm"><Link href="/models/new">{d.models.newModel}</Link></Button>}
         />
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -74,7 +78,7 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
                   <p className="font-mono text-xs text-muted-foreground">{m.code}</p>
                   <div className="flex items-center justify-between">
                     <StatusBadge status={m.status} />
-                    <span className="text-xs text-muted-foreground">{m.model_profile_assets.length} refs</span>
+                    <span className="text-xs text-muted-foreground">{fmt(d.models.refs, { n: m.model_profile_assets.length })}</span>
                   </div>
                 </CardContent>
               </Card>

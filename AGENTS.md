@@ -27,6 +27,8 @@ tests/                unit, db (real Postgres), e2e (PostgREST), integration (li
 
 ## Conventions
 
+- **No hardcoded UI text.** Every user-visible string lives in `src/lib/i18n/dictionaries/en.ts` and `tr.ts` (TypeScript + `tests/unit/i18n.test.ts` enforce identical keys and `{placeholders}`). Server components use `await getI18n()`, client components `useI18n()`, page titles `pageMetadata((d) => …)`; format dates/money with the `locale` argument.
+- User-facing errors are keys: `throw new UserFacingError("productNotFound", { … })`; custom zod messages are `d.validation` keys. Stored enum values stay English in the database and are translated at render time (`d.enums.*`).
 - Validate all input with zod schemas from `src/lib/domain/schemas.ts`.
 - Server actions: `requireOrgContext(minRole)` → `enforceRateLimit` → validate → query with the user's client (RLS) → `audit()` → `revalidatePath`. Return `ActionResult` via `runAction`/`toActionError`; only `UserFacingError`, `AuthorizationError`, `ConfigError`, `RateLimitError` messages reach users.
 - New job type: add to the `job_type` enum (migration), `JOB_TYPES`, a handler in `src/server/jobs/handlers`, and register it in `HANDLERS`. Handlers throw `ProviderError` with a classification; the worker decides retry vs fail.

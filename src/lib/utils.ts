@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { INTL_LOCALE, type Locale } from "@/lib/i18n/config";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,9 +18,9 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-export function formatMoney(amount: number | null | undefined, currency = "USD", digits = 4): string {
+export function formatMoney(amount: number | null | undefined, currency = "USD", digits = 4, locale: Locale = "en"): string {
   if (amount == null || !Number.isFinite(amount)) return "—";
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(INTL_LOCALE[locale], {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
@@ -27,9 +28,9 @@ export function formatMoney(amount: number | null | undefined, currency = "USD",
   }).format(amount);
 }
 
-export function formatDateTime(value: string | null | undefined): string {
+export function formatDateTime(value: string | null | undefined, locale: Locale = "en"): string {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(
+  return new Intl.DateTimeFormat(INTL_LOCALE[locale], { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(
     new Date(value),
   ) + " UTC";
 }

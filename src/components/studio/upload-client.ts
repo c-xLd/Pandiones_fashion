@@ -17,6 +17,7 @@ export async function uploadFile(
   file: File,
   role: AssetRole,
   onPhase?: (phase: "uploading" | "processing") => void,
+  storageErrorTemplate = "Upload failed: {message}",
 ): Promise<UploadOutcome> {
   onPhase?.("uploading");
   const t = await createUploadTarget({ target, entityId, fileName: file.name, size: file.size, mimeType: file.type });
@@ -25,7 +26,7 @@ export async function uploadFile(
   const { error } = await supabase.storage.from(t.data.bucket).uploadToSignedUrl(t.data.path, t.data.token, file, {
     contentType: file.type,
   });
-  if (error) return { ok: false, error: `Upload failed: ${error.message}` };
+  if (error) return { ok: false, error: storageErrorTemplate.replace("{message}", error.message) };
   onPhase?.("processing");
   const res =
     target === "products"

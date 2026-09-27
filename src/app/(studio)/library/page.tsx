@@ -13,8 +13,11 @@ import { PageHeader } from "@/components/studio/page-header";
 import { EmptyState } from "@/components/studio/empty-state";
 import { Pagination } from "@/components/studio/pagination";
 import { LibraryGrid } from "./library-grid";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
 
-export const metadata = { title: "Media library" };
+export const generateMetadata = pageMetadata((d) => d.library.metaTitle);
 const PAGE_SIZE = 48;
 const isUuid = (v: string | undefined) => Boolean(v && /^[0-9a-f-]{36}$/i.test(v));
 const isDate = (v: string | undefined) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
@@ -22,6 +25,8 @@ const isDate = (v: string | undefined) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.tes
 export default async function LibraryPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const ctx = await requirePageContext();
+  const { d } = await getI18n();
+  const t = d.library;
   const org = ctx.org.organizationId;
   const db = ctx.supabase;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
@@ -63,69 +68,67 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="Media library" description="All generated images and videos. Assets are private; links are short-lived signed URLs." />
+      <PageHeader title={t.title} description={t.description} />
       <Card className="mb-4">
         <CardContent className="flex flex-wrap gap-6 p-4 text-sm">
           <div>
-            <p className="text-xs text-muted-foreground">Total storage</p>
+            <p className="text-xs text-muted-foreground">{t.totalStorage}</p>
             <p className="text-lg font-semibold">{formatBytes(totalBytes)}</p>
           </div>
           {usage.map((u) => (
             <div key={u.category}>
-              <p className="text-xs text-muted-foreground">{u.category.replace(/_/g, " ")}</p>
-              <p>
-                {Number(u.files)} files · {formatBytes(Number(u.bytes))}
-              </p>
+              <p className="text-xs text-muted-foreground">{(t.storageCategories as Record<string, string>)[u.category] ?? u.category}</p>
+              <p>{fmt(t.filesSize, { files: Number(u.files), size: formatBytes(Number(u.bytes)) })}</p>
             </div>
           ))}
         </CardContent>
       </Card>
       <form className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-        <Input name="sku" placeholder="SKU" defaultValue={sp.sku ?? ""} aria-label="SKU" />
-        <NativeSelect name="kind" defaultValue={sp.kind ?? ""} aria-label="Media type">
-          <option value="">Images & videos</option>
-          <option value="image">Images</option>
-          <option value="video">Videos</option>
+        <Input name="sku" placeholder={t.sku} defaultValue={sp.sku ?? ""} aria-label={t.sku} />
+        <NativeSelect name="kind" defaultValue={sp.kind ?? ""} aria-label={t.mediaType}>
+          <option value="">{t.imagesAndVideos}</option>
+          <option value="image">{t.images}</option>
+          <option value="video">{t.videos}</option>
         </NativeSelect>
-        <NativeSelect name="review" defaultValue={sp.review ?? ""} aria-label="Approval">
-          <option value="">Any approval</option>
+        <NativeSelect name="review" defaultValue={sp.review ?? ""} aria-label={t.approval}>
+          <option value="">{t.anyApproval}</option>
           {REVIEW_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {d.enums.reviewStatus[s]}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="model" defaultValue={sp.model ?? ""} aria-label="Model profile">
-          <option value="">Any model</option>
+        <NativeSelect name="model" defaultValue={sp.model ?? ""} aria-label={t.modelProfile}>
+          <option value="">{t.anyModel}</option>
           {(models.data ?? []).map((m) => (
             <option key={m.id as string} value={m.id as string}>
               {m.display_name as string}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="campaign" defaultValue={sp.campaign ?? ""} aria-label="Campaign / video project">
-          <option value="">Any campaign</option>
+        <NativeSelect name="campaign" defaultValue={sp.campaign ?? ""} aria-label={t.campaign}>
+          <option value="">{t.anyCampaign}</option>
           {(campaigns.data ?? []).map((c) => (
             <option key={c.id as string} value={c.id as string}>
               {c.name as string}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="provider" defaultValue={sp.provider ?? ""} aria-label="Provider">
-          <option value="">Any provider</option>
+        <NativeSelect name="provider" defaultValue={sp.provider ?? ""} aria-label={t.provider}>
+          <option value="">{t.anyProvider}</option>
           <option value="gemini">gemini</option>
           <option value="gemini-veo">gemini-veo</option>
         </NativeSelect>
-        <Input type="date" name="from" defaultValue={sp.from ?? ""} aria-label="From date" />
+        <Input type="date" name="from" defaultValue={sp.from ?? ""} aria-label={t.fromDate} />
         <div className="flex gap-2">
-          <Input type="date" name="to" defaultValue={sp.to ?? ""} aria-label="To date" />
+          <Input type="date" name="to" defaultValue={sp.to ?? ""} aria-label={t.toDate} />
           <Button type="submit" variant="secondary">
-            Filter
+            {d.common.filter}
           </Button>
         </div>
       </form>
       {rows.length === 0 ? (
-        <EmptyState icon={Images} title="No media matches these filters" />
+        <EmptyState icon={Images} title={t.empty} />
       ) : (
         <LibraryGrid
           items={rows.map((r) => ({

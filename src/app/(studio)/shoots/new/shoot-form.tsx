@@ -11,6 +11,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SHOT_TYPES, shootStyleSchema, type ShotType, type ShootStyle } from "@/lib/domain/schemas";
 import { createShoot } from "@/server/actions/generation";
 import { StyleFields } from "../../presets/preset-form";
+import { useI18n } from "@/lib/i18n/client";
+import { fmt } from "@/lib/i18n/config";
 
 export interface ShootFormProps {
   product: { id: string; sku: string; title: string };
@@ -24,6 +26,8 @@ export interface ShootFormProps {
 
 export function ShootForm(props: ShootFormProps) {
   const router = useRouter();
+  const { d } = useI18n();
+  const t = d.shoot;
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
@@ -40,12 +44,14 @@ export function ShootForm(props: ShootFormProps) {
   const totalJobs = shotTypes.length * variations;
   const blocking = useMemo(() => {
     if (props.disabledReason) return props.disabledReason;
-    if (!productRefs.length) return "Select at least one product reference image.";
-    if (totalRefs > props.maxReferences) return `Select at most ${props.maxReferences} reference images in total.`;
-    if (!shotTypes.length) return "Select at least one shot type.";
-    if (totalJobs > props.maxJobs) return `This would create ${totalJobs} images; the maximum per shoot is ${props.maxJobs}.`;
+    if (!productRefs.length) return t.selectRef;
+    if (totalRefs > props.maxReferences) return fmt(t.tooManyRefs, { max: props.maxReferences });
+    if (!shotTypes.length) return t.selectShot;
+    if (totalJobs > props.maxJobs) return fmt(t.tooManyJobs, { total: totalJobs, max: props.maxJobs });
     return null;
-  }, [props.disabledReason, productRefs.length, totalRefs, props.maxReferences, shotTypes.length, totalJobs, props.maxJobs]);
+  }, [props.disabledReason, productRefs.length, totalRefs, props.maxReferences, shotTypes.length, totalJobs, props.maxJobs, t]);
+
+  const roleLabel = (r: string) => (d.enums.assetRole as Record<string, string>)[r] ?? r;
 
   function toggle<T>(list: T[], value: T, on: boolean): T[] {
     return on ? Array.from(new Set([...list, value])) : list.filter((v) => v !== value);
@@ -69,7 +75,7 @@ export function ShootForm(props: ShootFormProps) {
           variations: fd.get("variations"),
           creativeInstructions: fd.get("creativeInstructions"),
         });
-        if (!style.success) return setError(style.error.issues[0]?.message ?? "Invalid settings");
+        if (!style.success) return setError(t.invalidSettings);
         start(async () => {
           const res = await createShoot({
             productId: props.product.id,
@@ -89,9 +95,9 @@ export function ShootForm(props: ShootFormProps) {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>1 · Product references</CardTitle>
+            <CardTitle>{t.step1}</CardTitle>
             <CardDescription>
-              {props.product.sku} — {props.product.title}. These images define the garment that must be preserved.
+              {fmt(t.step1Description, { sku: props.product.sku, title: props.product.title })}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -102,10 +108,10 @@ export function ShootForm(props: ShootFormProps) {
                     className="absolute left-1.5 top-1.5"
                     checked={productRefs.includes(a.id)}
                     onChange={(e) => setProductRefs((s) => toggle(s, a.id, e.target.checked))}
-                    aria-label={`Use ${a.role} image`}
+                    aria-label={fmt(t.useImage, { role: roleLabel(a.role) })}
                   />
                   {a.url ? <img src={a.url} alt="" className="aspect-[3/4] w-full rounded-md object-cover" /> : <div className="aspect-[3/4] rounded-md bg-muted" />}
-                  <span className="text-xs text-muted-foreground">{a.role}</span>
+                  <span className="text-xs text-muted-foreground">{roleLabel(a.role)}</span>
                 </label>
               ))}
             </div>
@@ -114,12 +120,12 @@ export function ShootForm(props: ShootFormProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>2 · Model</CardTitle>
-            <CardDescription>Reference images improve identity consistency but cannot guarantee it.</CardDescription>
+            <CardTitle>{t.step2}</CardTitle>
+            <CardDescription>{t.step2Description}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <NativeSelect
-              aria-label="Model profile"
+              aria-label={t.modelProfile}
               value={modelId}
               onChange={(e) => {
                 setModelId(e.target.value);
@@ -127,7 +133,7 @@ export function ShootForm(props: ShootFormProps) {
                 setModelRefs(m ? m.assets.filter((a) => a.isPrimary).map((a) => a.id).slice(0, 1) : []);
               }}
             >
-              <option value="">No profile — generic adult model</option>
+              <option value="">{t.genericModel}</option>
               {props.models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} ({m.code})
@@ -142,7 +148,7 @@ export function ShootForm(props: ShootFormProps) {
                       className="absolute left-1 top-1"
                       checked={modelRefs.includes(a.id)}
                       onChange={(e) => setModelRefs((s) => toggle(s, a.id, e.target.checked))}
-                      aria-label="Use model reference"
+                      aria-label={t.useModelRef}
                     />
                     {a.url ? <img src={a.url} alt="" className="h-24 w-18 rounded object-cover" /> : <div className="h-24 w-18 rounded bg-muted" />}
                   </label>
@@ -150,19 +156,19 @@ export function ShootForm(props: ShootFormProps) {
               </div>
             )}
             {model && model.assets.length === 0 && (
-              <p className="text-sm text-muted-foreground">This profile has no reference images; only its text description will be used.</p>
+              <p className="text-sm text-muted-foreground">{t.noModelRefs}</p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>3 · Creative direction</CardTitle>
-            <CardDescription>Choose a preset, then adjust. Styling is kept separate from product constraints.</CardDescription>
+            <CardTitle>{t.step3}</CardTitle>
+            <CardDescription>{t.step3Description}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="preset">Preset</Label>
+              <Label htmlFor="preset">{t.preset}</Label>
               <NativeSelect
                 id="preset"
                 value={presetId}
@@ -173,21 +179,21 @@ export function ShootForm(props: ShootFormProps) {
                   if (p?.config.variations) setVariations(Number(p.config.variations));
                 }}
               >
-                <option value="">Custom (no preset)</option>
+                <option value="">{t.customPreset}</option>
                 {props.presets.map((p) => (
                   <option key={p.id} value={p.id}>
-                    [{p.category}] {p.name}
+                    [{(d.enums.presetCategory as Record<string, string>)[p.category] ?? p.category}] {p.name}
                   </option>
                 ))}
               </NativeSelect>
             </div>
             <fieldset>
-              <legend className="mb-2 text-sm font-medium">Shot types</legend>
+              <legend className="mb-2 text-sm font-medium">{t.shotTypes}</legend>
               <div className="flex flex-wrap gap-4">
                 {SHOT_TYPES.map((s) => (
                   <label key={s} className="flex items-center gap-2 text-sm">
                     <Checkbox checked={shotTypes.includes(s)} onChange={(e) => setShotTypes((list) => toggle(list, s, e.target.checked))} />
-                    {s.replace("_", "-")}
+                    {d.enums.shotType[s]}
                   </label>
                 ))}
               </div>
@@ -205,19 +211,12 @@ export function ShootForm(props: ShootFormProps) {
       <div className="space-y-4">
         <Card className="sticky top-4">
           <CardHeader>
-            <CardTitle>Summary</CardTitle>
+            <CardTitle>{t.summary}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p>
-              <strong>{totalJobs}</strong> image{totalJobs === 1 ? "" : "s"} ({shotTypes.length} shot type{shotTypes.length === 1 ? "" : "s"} × {variations} variation
-              {variations === 1 ? "" : "s"})
-            </p>
-            <p>
-              <strong>{totalRefs}</strong> / {props.maxReferences} reference images
-            </p>
-            <p className="text-muted-foreground">
-              Each image is a separate background job. You can close this page; results appear in Review. Automated QC screening runs after each image.
-            </p>
+            <p>{fmt(t.summaryImages, { total: totalJobs, shots: shotTypes.length, variations })}</p>
+            <p>{fmt(t.summaryRefs, { n: totalRefs, max: props.maxReferences })}</p>
+            <p className="text-muted-foreground">{t.summaryNote}</p>
             {blocking && (
               <Alert variant="warning">
                 <AlertDescription>{blocking}</AlertDescription>
@@ -229,7 +228,7 @@ export function ShootForm(props: ShootFormProps) {
               </Alert>
             )}
             <Button type="submit" className="w-full" disabled={pending || Boolean(blocking)}>
-              {pending ? <Loader2 className="animate-spin" /> : <Camera />} Queue {totalJobs} generation{totalJobs === 1 ? "" : "s"}
+              {pending ? <Loader2 className="animate-spin" /> : <Camera />} {fmt(t.queue, { n: totalJobs })}
             </Button>
           </CardContent>
         </Card>

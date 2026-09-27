@@ -22,7 +22,10 @@ export const analysisHandler: JobHandler = {
 
     const provider = getVisionProvider();
     const result = await provider.generateStructured({
-      prompt: buildAnalysisPrompt(assets.map((a, i) => ({ index: i + 1, role: a.role }))),
+      prompt: buildAnalysisPrompt(
+        assets.map((a, i) => ({ index: i + 1, role: a.role })),
+        typeof job.config.language === "string" ? job.config.language : undefined,
+      ),
       images: images.map((img, i) => ({ ...img, label: `product reference (${assets[i]?.role ?? "other"})` })),
       jsonSchema: productAnalysisJsonSchema,
       signal: ctx.signal,

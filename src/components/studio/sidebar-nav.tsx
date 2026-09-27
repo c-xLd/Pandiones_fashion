@@ -15,26 +15,30 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n/client";
+import type { Dictionary } from "@/lib/i18n/dictionaries";
 
-const NAV = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/products", label: "Products", icon: Shirt },
-  { href: "/models", label: "Models", icon: UserRound },
-  { href: "/presets", label: "Shoot presets", icon: SlidersHorizontal },
-  { href: "/shoots/new", label: "New shoot", icon: Camera },
-  { href: "/review", label: "Review", icon: ClipboardCheck },
-  { href: "/jobs", label: "Jobs", icon: ListChecks },
-  { href: "/video", label: "Video studio", icon: Clapperboard },
-  { href: "/library", label: "Media library", icon: Images },
-  { href: "/costs", label: "Costs & usage", icon: Wallet },
-  { href: "/settings", label: "Settings", icon: Settings },
+const NAV: { href: string; key: keyof Dictionary["nav"]; icon: typeof Shirt }[] = [
+  { href: "/", key: "dashboard", icon: LayoutDashboard },
+  { href: "/products", key: "products", icon: Shirt },
+  { href: "/models", key: "models", icon: UserRound },
+  { href: "/presets", key: "presets", icon: SlidersHorizontal },
+  { href: "/shoots/new", key: "newShoot", icon: Camera },
+  { href: "/review", key: "review", icon: ClipboardCheck },
+  { href: "/jobs", key: "jobs", icon: ListChecks },
+  { href: "/video", key: "video", icon: Clapperboard },
+  { href: "/library", key: "library", icon: Images },
+  { href: "/costs", key: "costs", icon: Wallet },
+  { href: "/settings", key: "settings", icon: Settings },
 ];
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { d } = useI18n();
   return (
-    <nav className="flex flex-col gap-0.5" aria-label="Main">
-      {NAV.map(({ href, label, icon: Icon }) => {
+    <nav className="flex flex-col gap-0.5" aria-label={d.common.mainNav}>
+      {NAV.map(({ href, key, icon: Icon }) => {
+        const label = d.nav[key];
         const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link

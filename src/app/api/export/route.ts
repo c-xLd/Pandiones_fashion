@@ -5,6 +5,8 @@ import { requireOrgContext, AuthorizationError } from "@/server/context";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 import { BUCKET } from "@/server/storage";
 import { audit } from "@/server/audit";
+import { toActionError } from "@/server/action";
+import { getI18n } from "@/lib/i18n/server";
 import { exportFileName } from "@/lib/domain/files";
 import type { ResultRow } from "@/lib/types";
 
@@ -31,16 +33,17 @@ function csvCell(value: unknown): string {
  * read with the USER's client, so storage RLS enforces tenant isolation.
  */
 export async function POST(request: NextRequest) {
+  const { d } = await getI18n();
   let ctx;
   try {
     ctx = await requireOrgContext("viewer");
     await enforceRateLimit("export", ctx.userId);
   } catch (error) {
     const status = error instanceof AuthorizationError ? 403 : error instanceof RateLimitError ? 429 : 500;
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Error" }, { status });
+    return NextResponse.json({ error: (await toActionError(error, "export")).error }, { status });
   }
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid export request" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: d.errors.exportInvalid }, { status: 400 });
 
   let query = ctx.supabase
     .from("generation_results")
@@ -49,10 +52,10 @@ export async function POST(request: NextRequest) {
     .in("id", parsed.data.resultIds);
   if (parsed.data.approvedOnly) query = query.eq("review_status", "approved");
   const { data, error } = await query;
-  if (error) return NextResponse.json({ error: "Could not load results" }, { status: 500 });
+  if (error) return NextResponse.json({ error: d.errors.generic }, { status: 500 });
   const rows = (data ?? []) as (ResultRow & { products: { sku: string; title: string } | null; model_profiles: { code: string } | null })[];
   if (!rows.length) {
-    return NextResponse.json({ error: parsed.data.approvedOnly ? "None of the selected items are approved." : "Nothing to export." }, { status: 400 });
+    return NextResponse.json({ error: parsed.data.approvedOnly ? d.errors.exportNoneApproved : d.errors.exportNothing }, { status: 400 });
   }
 
   const supabase = ctx.supabase;

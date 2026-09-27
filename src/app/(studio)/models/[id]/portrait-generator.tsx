@@ -9,6 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IMAGE_ASPECT_RATIOS, IMAGE_SIZES } from "@/lib/domain/schemas";
 import { requestModelPortrait } from "@/server/actions/models";
+import { useI18n } from "@/lib/i18n/client";
 
 export function PortraitGenerator({
   modelId,
@@ -20,6 +21,8 @@ export function PortraitGenerator({
   disabledReason: string | null;
 }) {
   const router = useRouter();
+  const { d } = useI18n();
+  const t = d.model.portrait;
   const [pending, start] = useTransition();
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -41,7 +44,7 @@ export function PortraitGenerator({
             idempotencyKey: key,
           });
           if (res.ok) {
-            setMessage({ ok: true, text: "Portrait queued. It appears below when the worker finishes." });
+            setMessage({ ok: true, text: t.queued });
             setKey(crypto.randomUUID());
             router.refresh();
           } else setMessage({ ok: false, text: res.error });
@@ -50,7 +53,7 @@ export function PortraitGenerator({
     >
       {references.length > 0 && (
         <fieldset>
-          <legend className="mb-1 text-sm font-medium">Identity references (optional)</legend>
+          <legend className="mb-1 text-sm font-medium">{t.identityRefs}</legend>
           <div className="flex flex-wrap gap-2">
             {references.map((r) => (
               <label key={r.id} className="relative cursor-pointer">
@@ -58,7 +61,7 @@ export function PortraitGenerator({
                   className="absolute left-1 top-1"
                   checked={selected.includes(r.id)}
                   onChange={(e) => setSelected((s) => (e.target.checked ? [...s, r.id] : s.filter((x) => x !== r.id)))}
-                  aria-label="Use as identity reference"
+                  aria-label={t.useAsRef}
                 />
                 {r.url ? <img src={r.url} alt="" className="h-20 w-16 rounded object-cover" /> : <div className="h-20 w-16 rounded bg-muted" />}
               </label>
@@ -68,7 +71,7 @@ export function PortraitGenerator({
       )}
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <Label htmlFor="aspectRatio">Aspect ratio</Label>
+          <Label htmlFor="aspectRatio">{t.aspectRatio}</Label>
           <NativeSelect id="aspectRatio" name="aspectRatio" defaultValue="3:4">
             {IMAGE_ASPECT_RATIOS.map((r) => (
               <option key={r}>{r}</option>
@@ -76,7 +79,7 @@ export function PortraitGenerator({
           </NativeSelect>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="imageSize">Size</Label>
+          <Label htmlFor="imageSize">{t.size}</Label>
           <NativeSelect id="imageSize" name="imageSize" defaultValue="1K">
             {IMAGE_SIZES.map((s) => (
               <option key={s}>{s}</option>
@@ -85,12 +88,12 @@ export function PortraitGenerator({
         </div>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="instructions">Instructions</Label>
-        <Textarea id="instructions" name="instructions" rows={2} maxLength={2000} placeholder="e.g. soft smile, hair tied back" />
+        <Label htmlFor="instructions">{t.instructions}</Label>
+        <Textarea id="instructions" name="instructions" rows={2} maxLength={2000} placeholder={t.instructionsPlaceholder} />
       </div>
       {disabledReason && <p className="text-xs text-warning-foreground">{disabledReason}</p>}
       <Button type="submit" disabled={pending || Boolean(disabledReason)}>
-        {pending ? <Loader2 className="animate-spin" /> : <Sparkles />} Generate reference portrait
+        {pending ? <Loader2 className="animate-spin" /> : <Sparkles />} {t.generate}
       </Button>
       {message && <p className={`text-sm ${message.ok ? "text-success" : "text-destructive"}`}>{message.text}</p>}
     </form>

@@ -7,29 +7,29 @@ import { Label } from "@/components/ui/label";
 import { SubmitButton } from "@/components/forms/submit-button";
 import { FormMessage } from "@/components/forms/form-message";
 import { formatDateTime } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n/client";
+import { fmt } from "@/lib/i18n/config";
+import type { Dictionary } from "@/lib/i18n/dictionaries";
 
-const FIELDS: { name: string; label: string; suggest: (a: ProductAnalysis) => string }[] = [
-  { name: "category", label: "Category", suggest: (a) => a.category },
-  { name: "colors", label: "Colors", suggest: (a) => a.dominantColors.map((c) => c.name).join(", ") },
-  { name: "fabric", label: "Fabric", suggest: (a) => a.fabricAppearance },
-  { name: "silhouette", label: "Silhouette", suggest: (a) => a.silhouette },
-  { name: "construction", label: "Construction", suggest: (a) => a.construction },
+const FIELDS: { name: keyof Dictionary["verified"]["fields"]; suggest: (a: ProductAnalysis) => string }[] = [
+  { name: "category", suggest: (a) => a.category },
+  { name: "colors", suggest: (a) => a.dominantColors.map((c) => c.name).join(", ") },
+  { name: "fabric", suggest: (a) => a.fabricAppearance },
+  { name: "silhouette", suggest: (a) => a.silhouette },
+  { name: "construction", suggest: (a) => a.construction },
   {
     name: "closures",
-    label: "Closures",
     suggest: (a) => a.details.filter((d) => d.element === "closures").map((d) => d.description).join("; "),
   },
   {
     name: "straps",
-    label: "Straps",
     suggest: (a) => a.details.filter((d) => d.element === "straps").map((d) => d.description).join("; "),
   },
   {
     name: "lace_or_pattern",
-    label: "Lace / pattern",
     suggest: (a) => a.details.filter((d) => d.element === "lace" || d.element === "print").map((d) => d.description).join("; "),
   },
-  { name: "notes", label: "Other notes", suggest: () => "" },
+  { name: "notes", suggest: () => "" },
 ];
 
 export function VerifiedAttributesForm({
@@ -46,16 +46,17 @@ export function VerifiedAttributesForm({
   readOnly: boolean;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const { locale, d } = useI18n();
   return (
     <form action={formAction} className="space-y-3 border-t pt-4">
       <div>
-        <p className="font-medium">Verified product attributes</p>
+        <p className="font-medium">{d.verified.title}</p>
         <p className="text-xs text-muted-foreground">
           {reviewedAt
-            ? `Last confirmed ${formatDateTime(reviewedAt)}. These are sent to the image model as product facts.`
+            ? fmt(d.verified.lastConfirmed, { date: formatDateTime(reviewedAt, locale) })
             : analysis
-              ? "Pre-filled from the AI analysis. Check each value against the real product, correct it, then save."
-              : "Optional. Enter facts about the garment you want every shoot to respect."}
+              ? d.verified.prefilled
+              : d.verified.optional}
         </p>
       </div>
       <fieldset disabled={readOnly} className="grid gap-3 sm:grid-cols-2">
@@ -64,7 +65,7 @@ export function VerifiedAttributesForm({
           const fallback = !verified && analysis ? f.suggest(analysis) : "";
           return (
             <div key={f.name} className="space-y-1">
-              <Label htmlFor={`va-${f.name}`}>{f.label}</Label>
+              <Label htmlFor={`va-${f.name}`}>{d.verified.fields[f.name]}</Label>
               <Input
                 id={`va-${f.name}`}
                 name={f.name}
@@ -76,7 +77,7 @@ export function VerifiedAttributesForm({
         })}
       </fieldset>
       <FormMessage state={state} />
-      {!readOnly && <SubmitButton pendingText="Saving…" variant="secondary">Confirm attributes</SubmitButton>}
+      {!readOnly && <SubmitButton pendingText={d.common.saving} variant="secondary">{d.verified.confirm}</SubmitButton>}
     </form>
   );
 }

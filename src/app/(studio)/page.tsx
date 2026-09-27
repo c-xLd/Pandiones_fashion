@@ -6,6 +6,9 @@ import { budgetState } from "@/lib/domain/costs";
 import { isGeminiConfigured } from "@/lib/env";
 import { isVideoEnabled } from "@/lib/providers/registry";
 import { formatMoney } from "@/lib/utils";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
 import type { ResultRow } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,11 +18,13 @@ import { MediaThumb } from "@/components/studio/media-thumb";
 import { QcBadge, StatusBadge } from "@/components/studio/status-badge";
 import { EmptyState } from "@/components/studio/empty-state";
 
-export const metadata = { title: "Dashboard" };
+export const generateMetadata = pageMetadata((d) => d.dashboard.metaTitle);
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
+  const money = (v: number | null) => formatMoney(v, "USD", 2, locale);
   const db = ctx.supabase;
   const org = ctx.org.organizationId;
 
@@ -45,46 +50,43 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const budgetInfo = budgetState(monthSpend, budget, orgRow.data?.budget_alert_percent ?? 80);
 
   const stats = [
-    { label: "Active products", value: products.count ?? 0, href: "/products", icon: Shirt },
-    { label: "Awaiting review", value: pendingReview.count ?? 0, href: "/review", icon: ClipboardCheck },
-    { label: "Jobs in progress", value: activeJobs.count ?? 0, href: "/jobs?status=active", icon: ListChecks },
-    { label: "Failed jobs (7 days)", value: failedJobs.count ?? 0, href: "/jobs?status=failed", icon: AlertTriangle },
+    { label: d.dashboard.activeProducts, value: products.count ?? 0, href: "/products", icon: Shirt },
+    { label: d.dashboard.awaitingReview, value: pendingReview.count ?? 0, href: "/review", icon: ClipboardCheck },
+    { label: d.dashboard.jobsInProgress, value: activeJobs.count ?? 0, href: "/jobs?status=active", icon: ListChecks },
+    { label: d.dashboard.failedJobs, value: failedJobs.count ?? 0, href: "/jobs?status=failed", icon: AlertTriangle },
   ];
 
   return (
     <>
       <PageHeader
-        title={`Welcome to ${ctx.org.organizationName}`}
-        description="Product → images → review → video. Every generation runs as a durable background job."
+        title={fmt(d.dashboard.welcome, { org: ctx.org.organizationName })}
+        description={d.dashboard.description}
         actions={
           <Button asChild>
             <Link href="/shoots/new">
-              <Camera /> New shoot
+              <Camera /> {d.nav.newShoot}
             </Link>
           </Button>
         }
       />
       {error === "forbidden" && (
         <Alert variant="destructive" className="mb-4">
-          <AlertDescription>You do not have permission to open that page.</AlertDescription>
+          <AlertDescription>{d.dashboard.forbidden}</AlertDescription>
         </Alert>
       )}
       {!isGeminiConfigured() && (
         <Alert variant="warning" className="mb-4">
-          <AlertTitle>Image generation is not configured</AlertTitle>
-          <AlertDescription>
-            Set <code>GEMINI_API_KEY</code> and <code>GEMINI_IMAGE_MODEL</code> on the server. Products and uploads work without them. See
-            docs/SETUP.md.
-          </AlertDescription>
+          <AlertTitle>{d.dashboard.geminiMissingTitle}</AlertTitle>
+          <AlertDescription>{d.dashboard.geminiMissingBody}</AlertDescription>
         </Alert>
       )}
       {budgetInfo.level === "warning" || budgetInfo.level === "exceeded" ? (
         <Alert variant={budgetInfo.level === "exceeded" ? "destructive" : "warning"} className="mb-4">
-          <AlertTitle>{budgetInfo.level === "exceeded" ? "Monthly budget exceeded" : "Approaching monthly budget"}</AlertTitle>
+          <AlertTitle>{budgetInfo.level === "exceeded" ? d.dashboard.budgetExceededTitle : d.dashboard.budgetWarningTitle}</AlertTitle>
           <AlertDescription>
-            {formatMoney(monthSpend, "USD", 2)} of {formatMoney(budget, "USD", 2)} ({budgetInfo.percent?.toFixed(0)}%) — mostly estimates.{" "}
+            {fmt(d.dashboard.budgetBody, { spend: money(monthSpend), budget: money(budget), percent: budgetInfo.percent?.toFixed(0) })}{" "}
             <Link href="/costs" className="underline">
-              View costs
+              {d.dashboard.viewCosts}
             </Link>
           </AlertDescription>
         </Alert>
@@ -109,17 +111,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Latest generated images</CardTitle>
+            <CardTitle>{d.dashboard.latestImages}</CardTitle>
           </CardHeader>
           <CardContent>
             {results.length === 0 ? (
               <EmptyState
                 icon={Camera}
-                title="No images generated yet"
-                description="Create a product, upload reference images and start a shoot."
+                title={d.dashboard.noImagesTitle}
+                description={d.dashboard.noImagesBody}
                 action={
                   <Button asChild size="sm">
-                    <Link href="/products/new">Add a product</Link>
+                    <Link href="/products/new">{d.dashboard.addProduct}</Link>
                   </Button>
                 }
               />
@@ -127,7 +129,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {results.map((r) => (
                   <Link key={r.id} href={`/results/${r.id}`} className="space-y-1">
-                    <MediaThumb src={r.thumbnail_path ? urls[r.thumbnail_path] : null} alt={`Result ${r.shot_type ?? ""}`} />
+                    <MediaThumb src={r.thumbnail_path ? urls[r.thumbnail_path] : null} alt={r.shot_type ?? ""} />
                     <div className="flex flex-wrap gap-1">
                       <StatusBadge status={r.review_status} />
                       <QcBadge status={r.qc_status} />
@@ -140,22 +142,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>This month</CardTitle>
-            <CardDescription>Provider usage cost (estimates unless marked actual).</CardDescription>
+            <CardTitle>{d.dashboard.thisMonth}</CardTitle>
+            <CardDescription>{d.dashboard.thisMonthDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="text-3xl font-semibold">{formatMoney(monthSpend, "USD", 2)}</p>
-            <p className="text-muted-foreground">Budget: {budget == null ? "not set" : formatMoney(budget, "USD", 2)}</p>
+            <p className="text-3xl font-semibold">{money(monthSpend)}</p>
+            <p className="text-muted-foreground">{fmt(d.dashboard.budget, { budget: budget == null ? d.common.notSet : money(budget) })}</p>
             <div className="space-y-1 border-t pt-3">
               <p>
-                Image generation: <strong>{isGeminiConfigured() ? "configured" : "not configured"}</strong>
+                {d.dashboard.imageGeneration} <strong>{isGeminiConfigured() ? d.dashboard.configured : d.dashboard.notConfigured}</strong>
               </p>
               <p>
-                Video generation: <strong>{isVideoEnabled() ? "configured" : "disabled"}</strong>
+                {d.dashboard.videoGeneration} <strong>{isVideoEnabled() ? d.dashboard.configured : d.dashboard.disabled}</strong>
               </p>
             </div>
             <Button asChild variant="outline" size="sm">
-              <Link href="/costs">Cost dashboard</Link>
+              <Link href="/costs">{d.dashboard.costDashboard}</Link>
             </Button>
           </CardContent>
         </Card>

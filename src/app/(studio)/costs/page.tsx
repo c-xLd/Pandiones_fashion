@@ -11,8 +11,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/studio/page-header";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
 
-export const metadata = { title: "Costs & usage" };
+export const generateMetadata = pageMetadata((d) => d.costs.metaTitle);
 
 interface BreakdownRow {
   job_type: string;
@@ -41,6 +44,9 @@ function monthRange(month: string | undefined) {
 export default async function CostsPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const sp = await searchParams;
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
+  const t = d.costs;
+  const money = (v: number | null, digits = 4) => formatMoney(v, "USD", digits, locale);
   const org = ctx.org.organizationId;
   const db = ctx.supabase;
   const { month, from, to } = monthRange(sp.month);
@@ -89,8 +95,8 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
     v.sources.add(r.cost_source);
     byModel.set(key, v);
   }
-  const daily = ((dailyRes.data ?? []) as { day: string; cost: number; calls: number }[]).map((d) => ({ ...d, cost: Number(d.cost) }));
-  const maxDaily = Math.max(0.000001, ...daily.map((d) => d.cost));
+  const daily = ((dailyRes.data ?? []) as { day: string; cost: number; calls: number }[]).map((row) => ({ ...row, cost: Number(row.cost) }));
+  const maxDaily = Math.max(0.000001, ...daily.map((row) => row.cost));
   const products = (productsRes.data ?? []) as { product_id: string; sku: string; title: string; cost: number; images: number; videos: number }[];
   const recent = (recentRes.data ?? []) as UsageRow[];
   const budget = orgRes.data?.monthly_budget_usd == null ? null : Number(orgRes.data.monthly_budget_usd);
@@ -100,81 +106,81 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader
-        title="Costs & usage"
-        description="Actual provider-reported costs and estimates are tracked separately. The Gemini API reports token usage, not charged amounts, so most figures are estimates."
+        title={t.title}
+        description={t.description}
         actions={
           <form className="flex gap-2">
-            <Input type="month" name="month" defaultValue={month} aria-label="Month" className="w-44" />
+            <Input type="month" name="month" defaultValue={month} aria-label={t.month} className="w-44" />
             <Button type="submit" variant="secondary">
-              Show
+              {d.common.show}
             </Button>
           </form>
         }
       />
       {budgetInfo.level !== "none" && budgetInfo.level !== "ok" && (
         <Alert variant={budgetInfo.level === "exceeded" ? "destructive" : "warning"} className="mb-4">
-          <AlertTitle>{budgetInfo.level === "exceeded" ? "Budget exceeded" : "Budget alert threshold reached"}</AlertTitle>
+          <AlertTitle>{budgetInfo.level === "exceeded" ? t.budgetExceeded : t.budgetAlert}</AlertTitle>
           <AlertDescription>
-            {formatMoney(total, "USD", 2)} of {formatMoney(budget, "USD", 2)} ({budgetInfo.percent?.toFixed(0)}%).{" "}
-            {orgRes.data?.budget_hard_limit ? "New generations are blocked while the hard limit is exceeded." : "Hard limit is off; generation continues."}
+            {fmt(t.budgetBody, { spend: money(total, 2), budget: money(budget, 2), percent: budgetInfo.percent?.toFixed(0) })}{" "}
+            {orgRes.data?.budget_hard_limit ? t.hardLimitOn : t.hardLimitOff}
           </AlertDescription>
         </Alert>
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total ({month})</CardDescription>
-            <CardTitle className="text-3xl">{formatMoney(total, "USD", 2)}</CardTitle>
+            <CardDescription>{fmt(t.total, { month })}</CardDescription>
+            <CardTitle className="text-3xl">{money(total, 2)}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-xs text-muted-foreground">
-            <p>Actual (provider-reported): {formatMoney(actual, "USD", 4)}</p>
-            <p>Estimated: {formatMoney(estimated, "USD", 4)}</p>
-            <p>Calls with unknown cost: {unknownCalls}</p>
-            <p>Budget: {budget == null ? "not set" : formatMoney(budget, "USD", 2)}</p>
+            <p>{fmt(t.actual, { amount: money(actual) })}</p>
+            <p>{fmt(t.estimated, { amount: money(estimated) })}</p>
+            <p>{fmt(t.unknownCalls, { n: unknownCalls })}</p>
+            <p>{fmt(t.budget, { budget: budget == null ? d.common.notSet : money(budget, 2) })}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Cost per image</CardDescription>
-            <CardTitle className="text-3xl">{images ? formatMoney(imageCost / images, "USD", 4) : "—"}</CardTitle>
+            <CardDescription>{t.perImage}</CardDescription>
+            <CardTitle className="text-3xl">{images ? money(imageCost / images) : "—"}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {images} images · {formatMoney(imageCost, "USD", 4)} generation · {formatMoney(qcCost, "USD", 4)} QC · {formatMoney(analysisCost, "USD", 4)} analysis
+            {fmt(t.perImageDetail, { images, gen: money(imageCost), qc: money(qcCost), analysis: money(analysisCost) })}
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Cost per video</CardDescription>
-            <CardTitle className="text-3xl">{videos ? formatMoney(videoCost / videos, "USD", 4) : "—"}</CardTitle>
+            <CardDescription>{t.perVideo}</CardDescription>
+            <CardTitle className="text-3xl">{videos ? money(videoCost / videos) : "—"}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {videos} videos · {sum((r) => r.video_seconds, (r) => r.job_type === "video_generation")}s · {formatMoney(videoCost, "USD", 4)}
+            {fmt(t.perVideoDetail, { videos, seconds: sum((r) => r.video_seconds, (r) => r.job_type === "video_generation"), cost: money(videoCost) })}
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Failed generations</CardDescription>
-            <CardTitle className="text-3xl">{formatMoney(failedCost, "USD", 4)}</CardTitle>
+            <CardDescription>{t.failed}</CardDescription>
+            <CardTitle className="text-3xl">{money(failedCost)}</CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{failedCalls} failed or blocked calls (cost counted only where usage was reported)</CardContent>
+          <CardContent className="text-xs text-muted-foreground">{fmt(t.failedDetail, { n: failedCalls })}</CardContent>
         </Card>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Daily spend</CardTitle>
+            <CardTitle>{t.daily}</CardTitle>
           </CardHeader>
           <CardContent>
             {daily.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No usage this month.</p>
+              <p className="text-sm text-muted-foreground">{t.noUsage}</p>
             ) : (
-              <ul className="space-y-1" aria-label="Daily spend">
-                {daily.map((d) => (
-                  <li key={d.day} className="grid grid-cols-[80px_1fr_90px] items-center gap-2 text-xs">
-                    <span>{d.day}</span>
-                    <span className="h-3 rounded bg-primary/80" style={{ width: `${Math.max(2, (d.cost / maxDaily) * 100)}%` }} />
-                    <span className="text-right">{formatMoney(d.cost, "USD", 3)}</span>
+              <ul className="space-y-1" aria-label={t.daily}>
+                {daily.map((day) => (
+                  <li key={day.day} className="grid grid-cols-[80px_1fr_90px] items-center gap-2 text-xs">
+                    <span>{day.day}</span>
+                    <span className="h-3 rounded bg-primary/80" style={{ width: `${Math.max(2, (day.cost / maxDaily) * 100)}%` }} />
+                    <span className="text-right">{money(day.cost, 3)}</span>
                   </li>
                 ))}
               </ul>
@@ -183,16 +189,16 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>By model</CardTitle>
+            <CardTitle>{t.byModel}</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Provider · model</TableHead>
-                  <TableHead>Calls</TableHead>
-                  <TableHead>Cost</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>{t.providerModel}</TableHead>
+                  <TableHead>{t.calls}</TableHead>
+                  <TableHead>{t.cost}</TableHead>
+                  <TableHead>{t.source}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -200,11 +206,11 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
                   <TableRow key={k}>
                     <TableCell className="text-xs">{k}</TableCell>
                     <TableCell>{v.calls}</TableCell>
-                    <TableCell>{formatMoney(v.cost)}</TableCell>
+                    <TableCell>{money(v.cost)}</TableCell>
                     <TableCell className="space-x-1">
                       {Array.from(v.sources).map((s) => (
                         <Badge key={s} variant={s === "provider_reported" ? "success" : s === "estimated" ? "info" : "outline"}>
-                          {s}
+                          {(d.enums.costSource as Record<string, string>)[s] ?? s}
                         </Badge>
                       ))}
                     </TableCell>
@@ -216,11 +222,11 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Top products by cost</CardTitle>
+            <CardTitle>{t.topProducts}</CardTitle>
           </CardHeader>
           <CardContent>
             {products.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No product-linked usage.</p>
+              <p className="text-sm text-muted-foreground">{t.noProductUsage}</p>
             ) : (
               <Table>
                 <TableBody>
@@ -233,9 +239,9 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
                       </TableCell>
                       <TableCell className="text-xs">{p.title}</TableCell>
                       <TableCell className="text-xs">
-                        {Number(p.images)} img · {Number(p.videos)} vid
+                        {fmt(t.productUnits, { images: Number(p.images), videos: Number(p.videos) })}
                       </TableCell>
-                      <TableCell>{formatMoney(Number(p.cost))}</TableCell>
+                      <TableCell>{money(Number(p.cost))}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -245,39 +251,36 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Limits</CardTitle>
+            <CardTitle>{t.limits}</CardTitle>
             <CardDescription>
-              Provider quotas are set per Google Cloud project (see AI Studio → usage and rate limits). The app enforces its own limits below to stay within them.
+              {t.limitsDescription}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <p>Worker concurrency (WORKER_MAX_CONCURRENCY): {process.env.WORKER_MAX_CONCURRENCY ?? "4 (default)"}</p>
+            <p>{fmt(t.concurrency, { value: process.env.WORKER_MAX_CONCURRENCY ?? t.concurrencyDefault })}</p>
             {Object.entries(LIMITS).map(([k, [n, w]]) => (
-              <p key={k}>
-                {k}: {n} requests / {w}s per user
-              </p>
+              <p key={k}>{fmt(t.rateLimit, { scope: t.rateScopes[k as keyof typeof t.rateScopes], n, w })}</p>
             ))}
-            <p>Monthly hard budget limit: {orgRes.data?.budget_hard_limit ? "on" : "off"} (Settings)</p>
+            <p>{fmt(t.hardLimit, { state: orgRes.data?.budget_hard_limit ? d.common.on : d.common.off })}</p>
           </CardContent>
         </Card>
       </div>
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>Pricing assumptions used for estimates</CardTitle>
+          <CardTitle>{t.pricingTitle}</CardTitle>
           <CardDescription>
-            Configured in <code>src/config/pricing.ts</code> and overridable with <code>PRICING_OVERRIDES_JSON</code>. Prices change — verify against the source and
-            record the verification date.
+            {t.pricingDescription}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Model prefix</TableHead>
-                <TableHead>Rates (USD)</TableHead>
-                <TableHead>Verified</TableHead>
-                <TableHead>Source</TableHead>
+                <TableHead>{t.modelPrefix}</TableHead>
+                <TableHead>{t.rates}</TableHead>
+                <TableHead>{t.verified}</TableHead>
+                <TableHead>{t.source}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -286,15 +289,16 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
                   <TableCell className="font-mono text-xs">{key}</TableCell>
                   <TableCell className="text-xs">
                     {p.kind === "tokens"
-                      ? `in ${p.inputPerMillion}/1M · text out ${p.outputTextPerMillion}/1M${p.outputImagePerMillion != null ? ` · image out ${p.outputImagePerMillion}/1M` : ""}`
+                      ? fmt(t.tokenRates, { input: p.inputPerMillion, text: p.outputTextPerMillion }) +
+                        (p.outputImagePerMillion != null ? fmt(t.imageRate, { image: p.outputImagePerMillion }) : "")
                       : Object.entries(p.perSecond)
                           .map(([r, v]) => `${r}: ${v}/s`)
                           .join(" · ")}
                   </TableCell>
-                  <TableCell>{p.verifiedAt ? <Badge variant="success">{p.verifiedAt}</Badge> : <Badge variant="warning">unverified</Badge>}</TableCell>
+                  <TableCell>{p.verifiedAt ? <Badge variant="success">{p.verifiedAt}</Badge> : <Badge variant="warning">{t.unverified}</Badge>}</TableCell>
                   <TableCell className="text-xs">
                     <a className="underline" href={p.source} target="_blank" rel="noreferrer">
-                      pricing page
+                      {t.pricingPage}
                     </a>
                   </TableCell>
                 </TableRow>
@@ -306,35 +310,35 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>Recent ledger entries</CardTitle>
+          <CardTitle>{t.recent}</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Model</TableHead>
-                <TableHead>Tokens in/out</TableHead>
-                <TableHead>Cost</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Request</TableHead>
+                <TableHead>{t.columns.time}</TableHead>
+                <TableHead>{t.columns.type}</TableHead>
+                <TableHead>{t.columns.model}</TableHead>
+                <TableHead>{t.columns.tokens}</TableHead>
+                <TableHead>{t.columns.cost}</TableHead>
+                <TableHead>{t.columns.source}</TableHead>
+                <TableHead>{t.columns.request}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {recent.map((u) => (
                 <TableRow key={u.id}>
-                  <TableCell className="whitespace-nowrap text-xs">{formatDateTime(u.created_at)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{formatDateTime(u.created_at, locale)}</TableCell>
                   <TableCell className="text-xs">
-                    {u.job_type.replace(/_/g, " ")} {!u.succeeded && <Badge variant="destructive">failed</Badge>}
+                    {d.enums.jobType[u.job_type]} {!u.succeeded && <Badge variant="destructive">{t.failedBadge}</Badge>}
                   </TableCell>
                   <TableCell className="text-xs">{u.model}</TableCell>
                   <TableCell className="text-xs">
                     {u.input_tokens ?? "—"} / {u.output_tokens ?? "—"}
                   </TableCell>
-                  <TableCell className="text-xs">{formatMoney(u.cost_amount == null ? null : Number(u.cost_amount), u.cost_currency, 6)}</TableCell>
+                  <TableCell className="text-xs">{formatMoney(u.cost_amount == null ? null : Number(u.cost_amount), u.cost_currency, 6, locale)}</TableCell>
                   <TableCell>
-                    <Badge variant={u.cost_source === "provider_reported" ? "success" : u.cost_source === "estimated" ? "info" : "outline"}>{u.cost_source}</Badge>
+                    <Badge variant={u.cost_source === "provider_reported" ? "success" : u.cost_source === "estimated" ? "info" : "outline"}>{d.enums.costSource[u.cost_source]}</Badge>
                   </TableCell>
                   <TableCell className="max-w-[160px] truncate font-mono text-[10px]" title={u.request_id ?? ""}>
                     {u.request_id ?? "—"}

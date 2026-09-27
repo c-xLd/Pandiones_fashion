@@ -62,10 +62,10 @@ export const productInputSchema = z.object({
   sku: z
     .string()
     .trim()
-    .min(1, "SKU is required")
+    .min(1, "skuRequired")
     .max(64)
-    .regex(/^[A-Za-z0-9._\-/]+$/, "SKU may contain letters, digits, dot, dash, underscore and slash"),
-  title: z.string().trim().min(1, "Title is required").max(200),
+    .regex(/^[A-Za-z0-9._\-/]+$/, "skuFormat"),
+  title: z.string().trim().min(1, "titleRequired").max(200),
   category: optionalText(80),
   color: optionalText(80),
   size: optionalText(80),
@@ -119,7 +119,7 @@ export const shootRequestSchema = z.object({
   productId: z.uuid(),
   modelProfileId: z.uuid().nullable(),
   presetId: z.uuid().nullable(),
-  productReferenceAssetIds: z.array(z.uuid()).min(1, "Select at least one product reference image").max(14),
+  productReferenceAssetIds: z.array(z.uuid()).min(1, "selectProductRef").max(14),
   modelReferenceAssetIds: z.array(z.uuid()).max(14).default([]),
   /** One shoot can request several shot types; each becomes its own jobs. */
   shotTypes: z.array(z.enum(SHOT_TYPES)).min(1).max(5),
@@ -137,6 +137,8 @@ export const imageJobConfigSchema = z.object({
   modelReferenceAssetIds: z.array(z.uuid()),
   variationIndex: z.number().int().min(0),
   regenerationNote: z.string().max(2000).nullable().default(null),
+  /** Language for AI-written free text (QC summaries); UI locale of the requester. */
+  language: z.enum(["en", "tr"]).default("en"),
 });
 export type ImageJobConfig = z.infer<typeof imageJobConfigSchema>;
 
@@ -156,7 +158,7 @@ export const modelProfileInputSchema = z.object({
   code: z
     .string()
     .trim()
-    .regex(/^[A-Za-z0-9_-]{2,40}$/, "Use 2–40 letters, digits, dash or underscore"),
+    .regex(/^[A-Za-z0-9_-]{2,40}$/, "modelCode"),
   displayName: z.string().trim().min(1).max(120),
   description: optionalText(2000),
   hair: optionalText(200),
@@ -170,13 +172,13 @@ export const modelProfileInputSchema = z.object({
     .optional()
     .transform((v) => (v ? v : null))
     .refine((v) => v == null || (v.match(/\d+/g) ?? []).every((n) => Number(n) >= 18), {
-      message: "Model profiles must depict adults (18+)",
+      message: "adultAge",
     }),
   stylingNotes: optionalText(2000),
   preferredLighting: optionalText(300),
   photographyStyle: optionalText(300),
   status: z.enum(["draft", "active", "retired"]).default("draft"),
-  adultConfirmed: z.literal(true, { error: "You must confirm the model is an adult (18+)" }),
+  adultConfirmed: z.literal(true, { error: "adultConfirm" }),
   consentNotes: optionalText(2000),
 });
 export type ModelProfileInput = z.infer<typeof modelProfileInputSchema>;
@@ -198,7 +200,7 @@ export const videoRequestSchema = z.object({
   kind: z.enum(["product", "advertising"]),
   sourceResultIds: z.array(z.uuid()).min(1).max(3),
   brief: z.string().trim().max(3000).optional().default(""),
-  prompt: z.string().trim().min(1, "Describe the video").max(2000),
+  prompt: z.string().trim().min(1, "describeVideo").max(2000),
   motionInstructions: z.string().trim().max(1000).optional().default(""),
   durationSeconds: z.coerce.number().int().min(1).max(60),
   aspectRatio: z.enum(VIDEO_ASPECT_RATIOS),

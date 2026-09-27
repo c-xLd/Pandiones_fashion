@@ -10,11 +10,17 @@ import { PageHeader } from "@/components/studio/page-header";
 import { StatusBadge } from "@/components/studio/status-badge";
 import { ActionButton } from "@/components/studio/action-button";
 import { AddMemberForm, MemberRoleSelect, OrgSettingsForm, ProviderCheckButton } from "./forms";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
+import type { OrgRole } from "@/lib/domain/schemas";
 
-export const metadata = { title: "Settings" };
+export const generateMetadata = pageMetadata((d) => d.settings.metaTitle);
 
 export default async function SettingsPage() {
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
+  const t = d.settings;
   const org = ctx.org.organizationId;
   const isAdmin = roleAtLeast(ctx.org.role, "admin");
   const [orgRes, membersRes, queueRes, auditRes] = await Promise.all([
@@ -23,7 +29,7 @@ export default async function SettingsPage() {
     ctx.supabase.rpc("queue_health", { p_org: org }),
     isAdmin ? ctx.supabase.from("audit_logs").select("*").eq("organization_id", org).order("created_at", { ascending: false }).limit(50) : Promise.resolve({ data: [] }),
   ]);
-  const members = (membersRes.data ?? []) as { id: string; user_id: string; role: string; created_at: string }[];
+  const members = (membersRes.data ?? []) as { id: string; user_id: string; role: OrgRole; created_at: string }[];
 
   // Member emails come from auth (admin API) and are only shown to admins.
   const emails: Record<string, string> = {};
@@ -53,12 +59,12 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description={`Organization · your role: ${ctx.org.role}`} />
+      <PageHeader title={t.title} description={fmt(t.description, { role: d.enums.role[ctx.org.role] })} />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Organization & budget</CardTitle>
-            <CardDescription>{isAdmin ? "Admins can change these settings." : "Read-only for your role."}</CardDescription>
+            <CardTitle>{t.orgTitle}</CardTitle>
+            <CardDescription>{isAdmin ? t.orgAdmin : t.orgReadOnly}</CardDescription>
           </CardHeader>
           <CardContent>
             <OrgSettingsForm
@@ -73,24 +79,24 @@ export default async function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Providers</CardTitle>
-            <CardDescription>Server-side configuration. Keys are never sent to the browser.</CardDescription>
+            <CardTitle>{t.providersTitle}</CardTitle>
+            <CardDescription>{t.providersDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <dl className="grid grid-cols-[150px_1fr] gap-1">
-              <dt className="text-muted-foreground">Image model</dt>
-              <dd>{gemini?.image ?? "not configured"}</dd>
-              <dt className="text-muted-foreground">Analysis / QC model</dt>
-              <dd>{gemini?.analysis ?? "not configured"}</dd>
-              <dt className="text-muted-foreground">Max references</dt>
+              <dt className="text-muted-foreground">{t.imageModel}</dt>
+              <dd>{gemini?.image ?? d.dashboard.notConfigured}</dd>
+              <dt className="text-muted-foreground">{t.analysisModel}</dt>
+              <dd>{gemini?.analysis ?? d.dashboard.notConfigured}</dd>
+              <dt className="text-muted-foreground">{t.maxRefs}</dt>
               <dd>{gemini?.maxRefs ?? "—"}</dd>
-              <dt className="text-muted-foreground">Automated QC</dt>
-              <dd>{qualityReviewEnabled() ? "enabled" : "disabled"}</dd>
-              <dt className="text-muted-foreground">Video provider</dt>
+              <dt className="text-muted-foreground">{t.autoQc}</dt>
+              <dd>{qualityReviewEnabled() ? t.enabled : t.disabled}</dd>
+              <dt className="text-muted-foreground">{t.videoProvider}</dt>
               <dd>
                 {video.provider}
                 {video.model ? ` · ${video.model}` : ""}
-                {video.durations ? ` · durations ${video.durations}s` : ""}
+                {video.durations ? fmt(t.durations, { list: video.durations }) : ""}
               </dd>
             </dl>
             {isAdmin && <ProviderCheckButton />}
@@ -99,16 +105,16 @@ export default async function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Members</CardTitle>
-            <CardDescription>viewer: read · editor: create, generate, review · admin: settings, members, deletion · owner: everything</CardDescription>
+            <CardTitle>{t.membersTitle}</CardTitle>
+            <CardDescription>{t.rolesHelp}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Since</TableHead>
+                  <TableHead>{t.member}</TableHead>
+                  <TableHead>{t.role}</TableHead>
+                  <TableHead>{t.since}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -117,15 +123,15 @@ export default async function SettingsPage() {
                   <TableRow key={m.id}>
                     <TableCell className="text-sm">
                       {emails[m.user_id] ?? `${m.user_id.slice(0, 8)}…`}
-                      {m.user_id === ctx.userId && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}
+                      {m.user_id === ctx.userId && <span className="ml-1 text-xs text-muted-foreground">{d.common.you}</span>}
                     </TableCell>
                     <TableCell>
-                      {isAdmin ? <MemberRoleSelect memberId={m.id} role={m.role} disabled={m.user_id === ctx.userId} /> : <StatusBadge status="none" label={m.role} />}
+                      {isAdmin ? <MemberRoleSelect memberId={m.id} role={m.role} disabled={m.user_id === ctx.userId} /> : <StatusBadge status="none" label={d.enums.role[m.role]} />}
                     </TableCell>
-                    <TableCell className="text-xs">{formatDateTime(m.created_at)}</TableCell>
+                    <TableCell className="text-xs">{formatDateTime(m.created_at, locale)}</TableCell>
                     <TableCell>
                       {isAdmin && m.user_id !== ctx.userId && (
-                        <ActionButton size="sm" variant="ghost" action={removeMember.bind(null, m.id)} confirm="Remove this member from the organization?">
+                        <ActionButton size="sm" variant="ghost" action={removeMember.bind(null, m.id)} confirm={t.removeConfirm}>
                           <Trash2 />
                         </ActionButton>
                       )}
@@ -140,20 +146,18 @@ export default async function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Queue health (24h)</CardTitle>
-            <CardDescription>Jobs are processed by the background worker (Vercel Cron → /api/jobs/run, or `npm run worker`).</CardDescription>
+            <CardTitle>{t.queueTitle}</CardTitle>
+            <CardDescription>{t.queueDescription}</CardDescription>
           </CardHeader>
           <CardContent>
             {queue.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No jobs in the last 24 hours.</p>
+              <p className="text-sm text-muted-foreground">{t.noJobs24h}</p>
             ) : (
               <ul className="space-y-1 text-sm">
                 {queue.map((q) => (
                   <li key={q.status} className="flex justify-between">
                     <StatusBadge status={q.status} />
-                    <span>
-                      {Number(q.jobs)} jobs · oldest {formatDateTime(q.oldest)}
-                    </span>
+                    <span>{fmt(t.queueRow, { n: Number(q.jobs), date: formatDateTime(q.oldest, locale) })}</span>
                   </li>
                 ))}
               </ul>
@@ -164,26 +168,26 @@ export default async function SettingsPage() {
         {isAdmin && (
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle>Audit log</CardTitle>
-              <CardDescription>Latest 50 important actions.</CardDescription>
+              <CardTitle>{t.auditTitle}</CardTitle>
+              <CardDescription>{t.auditDescription}</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Details</TableHead>
+                    <TableHead>{t.auditColumns.time}</TableHead>
+                    <TableHead>{t.auditColumns.action}</TableHead>
+                    <TableHead>{t.auditColumns.actor}</TableHead>
+                    <TableHead>{t.auditColumns.entity}</TableHead>
+                    <TableHead>{t.auditColumns.details}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {((auditRes.data ?? []) as { id: string; created_at: string; action: string; actor_id: string | null; entity_type: string; entity_id: string | null; metadata: Record<string, unknown> }[]).map((a) => (
                     <TableRow key={a.id}>
-                      <TableCell className="whitespace-nowrap text-xs">{formatDateTime(a.created_at)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{formatDateTime(a.created_at, locale)}</TableCell>
                       <TableCell className="text-xs font-medium">{a.action}</TableCell>
-                      <TableCell className="text-xs">{a.actor_id ? emails[a.actor_id] ?? a.actor_id.slice(0, 8) : "system"}</TableCell>
+                      <TableCell className="text-xs">{a.actor_id ? emails[a.actor_id] ?? a.actor_id.slice(0, 8) : d.common.system}</TableCell>
                       <TableCell className="text-xs">
                         {a.entity_type} {a.entity_id?.slice(0, 8)}
                       </TableCell>

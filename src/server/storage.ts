@@ -26,7 +26,7 @@ export function assertUploadPath(path: string, org: string, kind: "products" | "
   const pattern = new RegExp(
     `^${org}/${kind}/${entityId}/source/[0-9a-f-]{36}\\.(jpg|png|webp)$`,
   );
-  if (!pattern.test(path)) throw new UserFacingError("Invalid upload path.");
+  if (!pattern.test(path)) throw new UserFacingError("invalidUploadPath");
 }
 
 export async function downloadObject(path: string, client: SupabaseClient = getSupabaseAdmin()): Promise<Buffer> {
@@ -61,12 +61,12 @@ export interface ProcessedImage {
 /** Validate real bytes, read dimensions and build a WebP thumbnail. */
 export async function processImage(bytes: Buffer, opts: { enforceMinSize?: boolean } = {}): Promise<ProcessedImage> {
   const basic = validateImageBytes(bytes);
-  if (!basic.ok) throw new UserFacingError(basic.error);
+  if (!basic.ok) throw new UserFacingError(basic.error, basic.vars);
   let meta: Metadata;
   try {
     meta = await sharp(bytes, { limitInputPixels: 12_000 * 12_000 }).metadata();
   } catch {
-    throw new UserFacingError("The image could not be decoded.");
+    throw new UserFacingError("imageUndecodable");
   }
   // EXIF orientations 5–8 swap width and height.
   const rotated = (meta.orientation ?? 1) >= 5;
@@ -74,7 +74,7 @@ export async function processImage(bytes: Buffer, opts: { enforceMinSize?: boole
   const height = (rotated ? meta.width : meta.height) ?? 0;
   if (opts.enforceMinSize !== false) {
     const withDims = validateImageBytes(bytes, { width, height });
-    if (!withDims.ok) throw new UserFacingError(withDims.error);
+    if (!withDims.ok) throw new UserFacingError(withDims.error, withDims.vars);
   }
   const thumbnail = await sharp(bytes)
     .rotate()

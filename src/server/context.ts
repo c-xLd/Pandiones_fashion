@@ -78,10 +78,10 @@ export async function requirePageContext(minRole: OrgRole = "viewer"): Promise<O
 /** For server actions and route handlers: throws instead of redirecting. */
 export async function requireOrgContext(minRole: OrgRole = "viewer"): Promise<OrgContext> {
   const ctx = await getSessionContext();
-  if (!ctx) throw new AuthorizationError("You must be signed in.");
-  if (!ctx.org) throw new AuthorizationError("Create or join an organization first.");
+  if (!ctx) throw new AuthorizationError("notSignedIn");
+  if (!ctx.org) throw new AuthorizationError("noOrganization");
   if (!roleAtLeast(ctx.org.role, minRole)) {
-    throw new AuthorizationError(`This action requires the ${minRole} role.`);
+    throw new AuthorizationError("roleRequired", { role: minRole });
   }
   return ctx as OrgContext;
 }

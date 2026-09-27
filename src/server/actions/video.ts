@@ -19,29 +19,27 @@ export async function createVideoProject(input: VideoRequest): Promise<ActionRes
     const ctx = await requireOrgContext("editor");
     await enforceRateLimit("generate", ctx.userId);
     if (!isVideoEnabled()) {
-      throw new UserFacingError("Video generation is not configured. See docs/API_PROVIDERS.md.");
+      throw new UserFacingError("videoNotConfigured");
     }
     const data = videoRequestSchema.parse(input);
     const cfg = videoConfig();
     if (!cfg.allowedDurations.includes(data.durationSeconds)) {
-      throw new UserFacingError(`Duration must be one of: ${cfg.allowedDurations.join(", ")} seconds.`);
+      throw new UserFacingError("videoDuration", { list: cfg.allowedDurations.join(", ") });
     }
     if (data.kind === "product" && data.sourceResultIds.length !== 1) {
-      throw new UserFacingError("A product video uses exactly one approved image.");
+      throw new UserFacingError("productVideoOneImage");
     }
     if (data.sourceResultIds.length > 1 && !cfg.supportsReferenceImages) {
-      throw new UserFacingError(
-        "Multiple source images need a video model with reference-image support (VIDEO_SUPPORTS_REFERENCE_IMAGES=true). Select one image.",
-      );
+      throw new UserFacingError("videoNeedsRefSupport");
     }
     const org = ctx.org.organizationId;
     const sources = check(
       await ctx.supabase.from("generation_results").select("*").eq("organization_id", org).in("id", data.sourceResultIds),
       "Load images",
     ) as ResultRow[];
-    if (sources.length !== data.sourceResultIds.length) throw new UserFacingError("Some selected images were not found.");
+    if (sources.length !== data.sourceResultIds.length) throw new UserFacingError("imagesNotFound");
     if (sources.some((s) => s.kind !== "image" || s.review_status !== "approved")) {
-      throw new UserFacingError("Only approved images can be used for video generation.");
+      throw new UserFacingError("onlyApprovedForVideo");
     }
     const productId = sources[0]?.product_id ?? null;
 
@@ -116,8 +114,8 @@ export async function setVideoApproval(projectId: string, decision: string): Pro
       await ctx.supabase.from("video_projects").select("status").eq("id", id).eq("organization_id", org).maybeSingle(),
       "Load project",
     ) as { status: string } | null;
-    if (!project) throw new UserFacingError("Video project not found.");
-    if (status === "approved" && project.status !== "ready") throw new UserFacingError("Only finished videos can be approved.");
+    if (!project) throw new UserFacingError("videoProjectNotFound");
+    if (status === "approved" && project.status !== "ready") throw new UserFacingError("onlyFinishedApproved");
     check(
       await ctx.supabase
         .from("video_projects")

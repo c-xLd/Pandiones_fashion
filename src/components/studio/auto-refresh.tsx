@@ -1,6 +1,8 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useI18n } from "@/lib/i18n/client";
+import { fmt } from "@/lib/i18n/config";
 
 /**
  * Re-fetches server data while background work is active. The work itself
@@ -8,6 +10,7 @@ import { useRouter } from "next/navigation";
  */
 export function AutoRefresh({ active, intervalMs = 5000 }: { active: boolean; intervalMs?: number }) {
   const router = useRouter();
+  const { d } = useI18n();
   useEffect(() => {
     if (!active) return;
     const id = setInterval(() => {
@@ -18,7 +21,7 @@ export function AutoRefresh({ active, intervalMs = 5000 }: { active: boolean; in
   if (!active) return null;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
-      <span className="h-2 w-2 animate-pulse rounded-full bg-info" /> Live — updating every {Math.round(intervalMs / 1000)}s
+      <span className="h-2 w-2 animate-pulse rounded-full bg-info" /> {fmt(d.common.liveUpdating, { s: Math.round(intervalMs / 1000) })}
     </span>
   );
 }

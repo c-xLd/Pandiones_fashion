@@ -163,15 +163,28 @@ export function buildModelPortraitPrompt(model: ModelContext, instructions: stri
   return parts.join("\n\n");
 }
 
-export function buildAnalysisPrompt(images: { index: number; role: AssetRole }[]): string {
+const LANGUAGE_NAMES: Record<string, string> = { en: "English", tr: "Turkish" };
+
+/** Instruction for free-text fields; enum values must stay as defined in the schema. */
+export function outputLanguageInstruction(language: string | undefined): string | null {
+  if (!language || language === "en") return null;
+  const name = LANGUAGE_NAMES[language];
+  if (!name) return null;
+  return `Write every free-text value (descriptions, summaries, issues, uncertainties, colour and category names) in ${name}. Keep enum values exactly as defined in the schema (in English).`;
+}
+
+export function buildAnalysisPrompt(images: { index: number; role: AssetRole }[], language?: string): string {
   return [
     "You are a meticulous fashion product analyst preparing data for catalog photography.",
     `You are given ${images.length} product reference image(s): ${images.map((i) => `#${i.index} = ${i.role}`).join(", ")}.`,
     "Describe ONLY what is visible. Never invent the back, interior or construction if it is not shown; record such gaps in `uncertainties` and `missingReferenceAngles`.",
     "Use confidence 'low' for anything ambiguous. Colours should be named as they appear under the given lighting.",
     "Assess image quality issues that would hurt AI reference use (blur, low resolution, heavy shadows, cropping, busy background, watermarks).",
+    outputLanguageInstruction(language),
     "Respond with JSON matching the provided schema.",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildQualityReviewPrompt(input: {
@@ -180,6 +193,7 @@ export function buildQualityReviewPrompt(input: {
   shotType: string | null;
   framing: string | null;
   background: string | null;
+  language?: string;
 }): string {
   const p = input.productRefCount;
   const m = input.modelRefCount;
@@ -194,8 +208,11 @@ export function buildQualityReviewPrompt(input: {
       (input.background ? `; unexpected background (expected ${input.background})` : "") +
       ".",
     "Only flag what you can actually see. Your output is a screening signal for a human reviewer, not a final decision.",
+    outputLanguageInstruction(input.language),
     "Respond with JSON matching the provided schema.",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildVideoPrompt(input: {

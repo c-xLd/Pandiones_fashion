@@ -12,5 +12,5 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) return NextResponse.redirect(new URL("/onboarding", url.origin));
   }
-  return NextResponse.redirect(new URL("/login?error=The+confirmation+link+is+invalid+or+expired", url.origin));
+  return NextResponse.redirect(new URL("/login?error=confirm", url.origin));
 }

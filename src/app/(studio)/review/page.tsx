@@ -3,6 +3,9 @@ import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { REVIEW_STATUSES } from "@/lib/domain/schemas";
 import type { ResultRow } from "@/lib/types";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeader } from "@/components/studio/page-header";
@@ -11,12 +14,14 @@ import { Pagination } from "@/components/studio/pagination";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 import { ReviewGrid } from "./review-grid";
 
-export const metadata = { title: "Review" };
+export const generateMetadata = pageMetadata((d) => d.review.metaTitle);
 const PAGE_SIZE = 40;
 
 export default async function ReviewPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const ctx = await requirePageContext();
+  const { d } = await getI18n();
+  const t = d.review;
   const org = ctx.org.organizationId;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
   const status = REVIEW_STATUSES.includes(sp.status as (typeof REVIEW_STATUSES)[number]) ? (sp.status as string) : "pending";
@@ -47,38 +52,42 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader
-        title="Review"
+        title={t.title}
         description={
           <span className="flex flex-wrap items-center gap-3">
-            Human approval is required before any image is used or exported for publication. QC flags are automated screening signals only.
+            {t.description}
             <AutoRefresh active={(activeJobs.count ?? 0) > 0} intervalMs={10000} />
           </span>
         }
       />
       <form className="mb-4 flex flex-wrap gap-2">
-        <NativeSelect name="status" defaultValue={status} className="w-40" aria-label="Review status">
+        <NativeSelect name="status" defaultValue={status} className="w-40" aria-label={t.reviewStatus}>
           {REVIEW_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {d.enums.reviewStatus[s]}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="qc" defaultValue={qc ?? ""} className="w-48" aria-label="QC status">
-          <option value="">Any QC result</option>
-          <option value="flagged">QC flagged</option>
-          <option value="passed">QC no issues</option>
-          <option value="queued">QC pending</option>
-          <option value="error">QC error</option>
-          <option value="not_run">QC not run</option>
+        <NativeSelect name="qc" defaultValue={qc ?? ""} className="w-48" aria-label={t.qcStatus}>
+          <option value="">{t.anyQc}</option>
+          <option value="flagged">{t.qcFlagged}</option>
+          <option value="passed">{t.qcNoIssues}</option>
+          <option value="queued">{t.qcPending}</option>
+          <option value="error">{t.qcError}</option>
+          <option value="not_run">{t.qcNotRun}</option>
         </NativeSelect>
         {batch && <input type="hidden" name="batch" value={batch} />}
         {product && <input type="hidden" name="product" value={product} />}
         <Button type="submit" variant="secondary">
-          Filter
+          {d.common.filter}
         </Button>
       </form>
       {rows.length === 0 ? (
-        <EmptyState icon={ClipboardCheck} title={status === "pending" ? "Nothing waiting for review" : `No ${status} images`} description="Generated images appear here as the worker completes them." />
+        <EmptyState
+          icon={ClipboardCheck}
+          title={status === "pending" ? t.nothingPending : fmt(t.noneWithStatus, { status: d.enums.reviewStatus[status as keyof typeof d.enums.reviewStatus] })}
+          description={t.emptyBody}
+        />
       ) : (
         <ReviewGrid
           canEdit={roleAtLeast(ctx.org.role, "editor")}

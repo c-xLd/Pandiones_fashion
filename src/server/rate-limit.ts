@@ -2,8 +2,8 @@ import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export class RateLimitError extends Error {
-  constructor(message = "Too many requests. Please wait a moment and try again.") {
-    super(message);
+  constructor(public readonly key: "rateLimited" | "rateLimiterUnavailable" = "rateLimited") {
+    super(key === "rateLimited" ? "Too many requests. Please wait a moment and try again." : "Rate limiter unavailable; try again shortly.");
     this.name = "RateLimitError";
   }
 }
@@ -28,7 +28,7 @@ export async function enforceRateLimit(scope: keyof typeof LIMITS, subject: stri
   if (error) {
     // Fail closed for expensive operations, open for cheap ones.
     console.error("[rate-limit] check failed", { scope, error: error.message });
-    if (scope === "generate" || scope === "export") throw new RateLimitError("Rate limiter unavailable; try again shortly.");
+    if (scope === "generate" || scope === "export") throw new RateLimitError("rateLimiterUnavailable");
     return;
   }
   if (data === false) throw new RateLimitError();

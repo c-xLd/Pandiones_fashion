@@ -12,6 +12,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { VIDEO_ASPECT_RATIOS, VIDEO_RESOLUTIONS } from "@/lib/domain/schemas";
 import { createVideoProject } from "@/server/actions/video";
+import { useI18n } from "@/lib/i18n/client";
+import { fmt } from "@/lib/i18n/config";
+import { shotLabel } from "@/lib/i18n/labels";
 
 export interface VideoSource {
   id: string;
@@ -32,6 +35,8 @@ export function VideoForm({
   supportsReferenceImages: boolean;
 }) {
   const router = useRouter();
+  const { d } = useI18n();
+  const t = d.video.form;
   const [kind, setKind] = useState<"product" | "advertising">("product");
   const [selected, setSelected] = useState<string[]>(initialSelection.slice(0, 1));
   const [pending, start] = useTransition();
@@ -74,18 +79,14 @@ export function VideoForm({
     >
       <Card>
         <CardHeader>
-          <CardTitle>Approved source images</CardTitle>
+          <CardTitle>{t.sourcesTitle}</CardTitle>
           <CardDescription>
-            {kind === "product"
-              ? "Pick one approved image; it becomes the starting frame."
-              : supportsReferenceImages
-                ? "Pick up to 3 approved images as visual references."
-                : "The configured video model is set up for a single starting image; pick one."}
+            {kind === "product" ? t.sourcesProduct : supportsReferenceImages ? t.sourcesAdRefs : t.sourcesAdSingle}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {sources.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No approved images yet. Approve images in Review first.</p>
+            <p className="text-sm text-muted-foreground">{t.noApproved}</p>
           ) : (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
               {sources.map((s) => (
@@ -94,11 +95,11 @@ export function VideoForm({
                     className="absolute left-1.5 top-1.5"
                     checked={selected.includes(s.id)}
                     onChange={(e) => toggle(s.id, e.target.checked)}
-                    aria-label={`Use ${s.sku ?? ""} ${s.shotType ?? ""}`}
+                    aria-label={fmt(t.useImage, { name: `${s.sku ?? ""} ${shotLabel(d, s.shotType)}` })}
                   />
                   {s.url ? <img src={s.url} alt="" className="aspect-[3/4] w-full rounded-md object-cover" /> : <div className="aspect-[3/4] rounded-md bg-muted" />}
                   <span className="text-[11px] text-muted-foreground">
-                    {s.sku} · {s.shotType}
+                    {s.sku} · {shotLabel(d, s.shotType)}
                   </span>
                 </label>
               ))}
@@ -108,11 +109,11 @@ export function VideoForm({
       </Card>
       <Card className="h-fit">
         <CardHeader>
-          <CardTitle>Video settings</CardTitle>
+          <CardTitle>{t.settings}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <fieldset className="flex gap-4 text-sm">
-            <legend className="sr-only">Video type</legend>
+            <legend className="sr-only">{t.videoType}</legend>
             {(["product", "advertising"] as const).map((k) => (
               <label key={k} className="flex items-center gap-2">
                 <input
@@ -124,31 +125,31 @@ export function VideoForm({
                     setSelected((s) => s.slice(0, 1));
                   }}
                 />
-                {k === "product" ? "Product video" : "Advertising video"}
+                {k === "product" ? t.productVideo : t.adVideo}
               </label>
             ))}
           </fieldset>
           <div className="space-y-1">
-            <Label htmlFor="name">Name *</Label>
+            <Label htmlFor="name">{t.name}</Label>
             <Input id="name" name="name" required maxLength={160} />
           </div>
           {kind === "advertising" && (
             <div className="space-y-1">
-              <Label htmlFor="brief">Campaign brief</Label>
-              <Textarea id="brief" name="brief" rows={3} maxLength={3000} placeholder="Audience, mood, message, season…" />
+              <Label htmlFor="brief">{t.brief}</Label>
+              <Textarea id="brief" name="brief" rows={3} maxLength={3000} placeholder={t.briefPlaceholder} />
             </div>
           )}
           <div className="space-y-1">
-            <Label htmlFor="prompt">Scene description *</Label>
-            <Textarea id="prompt" name="prompt" rows={3} required maxLength={2000} placeholder="The model turns slowly to show the garment…" />
+            <Label htmlFor="prompt">{t.prompt}</Label>
+            <Textarea id="prompt" name="prompt" rows={3} required maxLength={2000} placeholder={t.promptPlaceholder} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="motion">Camera & motion</Label>
-            <Input id="motion" name="motion" maxLength={1000} placeholder="slow dolly-in, gentle fabric movement" />
+            <Label htmlFor="motion">{t.motion}</Label>
+            <Input id="motion" name="motion" maxLength={1000} placeholder={t.motionPlaceholder} />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="duration">Duration</Label>
+              <Label htmlFor="duration">{t.duration}</Label>
               <NativeSelect id="duration" name="duration" defaultValue={String(durations[durations.length - 1])}>
                 {durations.map((d) => (
                   <option key={d} value={d}>
@@ -158,7 +159,7 @@ export function VideoForm({
               </NativeSelect>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="aspectRatio">Aspect</Label>
+              <Label htmlFor="aspectRatio">{t.aspect}</Label>
               <NativeSelect id="aspectRatio" name="aspectRatio" defaultValue="9:16">
                 {VIDEO_ASPECT_RATIOS.map((a) => (
                   <option key={a}>{a}</option>
@@ -166,7 +167,7 @@ export function VideoForm({
               </NativeSelect>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="resolution">Resolution</Label>
+              <Label htmlFor="resolution">{t.resolution}</Label>
               <NativeSelect id="resolution" name="resolution" defaultValue="720p">
                 {VIDEO_RESOLUTIONS.map((r) => (
                   <option key={r}>{r}</option>
@@ -175,8 +176,7 @@ export function VideoForm({
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Video generation is billed per generated second and runs for several minutes in the background. Supported durations and resolutions depend on the
-            configured model.
+            {t.billingNote}
           </p>
           {error && (
             <Alert variant="destructive">
@@ -184,7 +184,7 @@ export function VideoForm({
             </Alert>
           )}
           <Button type="submit" className="w-full" disabled={pending || selected.length === 0}>
-            {pending ? <Loader2 className="animate-spin" /> : <Clapperboard />} Generate video
+            {pending ? <Loader2 className="animate-spin" /> : <Clapperboard />} {t.generate}
           </Button>
         </CardContent>
       </Card>

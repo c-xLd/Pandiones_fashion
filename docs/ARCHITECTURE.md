@@ -79,3 +79,12 @@ queued ──claim──► processing ──► succeeded
 - Trigram indexes for SKU/title search; composite indexes for org-scoped listings and queue scanning (partial indexes on `queued`/`processing`).
 - Cost and storage reporting aggregate in SQL (no row-limit issues).
 - Throughput is bounded by `WORKER_MAX_CONCURRENCY` and provider quotas; 1,000 products × ~10 images/month ≈ 10k image jobs + QC ≈ 20k calls/month, i.e. well under one call per minute on average. Increase concurrency and run more worker instances to scale; the claim function is safe for any number of workers.
+
+## Internationalization (i18n)
+
+- Languages: Turkish (`tr`) and English (`en`). `src/lib/i18n/config.ts` resolves the language from the `pfs_locale` cookie, falling back to `Accept-Language`, then English. The language switcher (sidebar, mobile menu, sign-in, onboarding, setup) stores the cookie through the `setLocale` server action.
+- Dictionaries: `src/lib/i18n/dictionaries/en.ts` defines the shape; `tr.ts` is typed against it, so a missing key is a compile error. `tests/unit/i18n.test.ts` also checks that `{placeholders}` match and that nothing is left untranslated by accident.
+- Rendering: server components call `getI18n()`; the root layout passes the active dictionary to `I18nProvider` for client components (`useI18n()`); `<html lang>` and page titles follow the locale. Dates and money use `Intl` with `tr-TR` / `en-GB`.
+- Errors: `UserFacingError` / `AuthorizationError` carry a dictionary key and variables; `toActionError` renders them in the requester's language (English text remains on `error.message` for logs). Zod custom messages are `d.validation` keys; zod's built-in messages are re-rendered with zod's Turkish locale. Upload validation (`lib/domain/files.ts`) returns keys so the browser and server share translations. Job error codes stored in the queue (`safety_filtered`, `reference_missing`, …) are explained in the UI via `d.jobErrors`, with the raw provider message shown as detail.
+- AI text: product analysis and QC jobs store the requester's language in their config; prompts ask the model to write free-text fields in that language while keeping schema enum values in English (translated at render time). Image/video generation prompts stay in English for best model adherence; user-entered creative instructions may be in any language.
+- Data: enum values in the database (statuses, roles, shot types …) are language-neutral English identifiers; only their labels are translated.

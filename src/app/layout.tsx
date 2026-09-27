@@ -1,19 +1,29 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { getI18n } from "@/lib/i18n/server";
+import { I18nProvider } from "@/lib/i18n/client";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const inter = Inter({ subsets: ["latin", "latin-ext"], variable: "--font-inter" });
 
-export const metadata: Metadata = {
-  title: { default: "Pandiones Studio", template: "%s · Pandiones Studio" },
-  description: "AI fashion studio for product photography and video",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { d } = await getI18n();
+  return {
+    title: { default: d.meta.appName, template: `%s · ${d.meta.appName}` },
+    description: d.meta.description,
+    robots: { index: false, follow: false },
+  };
+}
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const { locale, d } = await getI18n();
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="min-h-screen font-sans">{children}</body>
+    <html lang={locale} className={inter.variable}>
+      <body className="min-h-screen font-sans">
+        <I18nProvider locale={locale} d={d}>
+          {children}
+        </I18nProvider>
+      </body>
     </html>
   );
 }

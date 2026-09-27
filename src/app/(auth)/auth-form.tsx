@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { SubmitButton } from "@/components/forms/submit-button";
 import { FormMessage } from "@/components/forms/form-message";
 import type { FormState } from "@/server/actions/auth";
+import { useI18n } from "@/lib/i18n/client";
 
 export function AuthForm({
   mode,
@@ -18,24 +19,25 @@ export function AuthForm({
   next?: string;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const { d } = useI18n();
   const isLogin = mode === "login";
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{isLogin ? "Sign in" : "Create an account"}</CardTitle>
+        <CardTitle>{isLogin ? d.auth.signIn : d.auth.createAccount}</CardTitle>
         <CardDescription>
-          {isLogin ? "Use your studio account." : "You can create or join an organization after signing up."}
+          {isLogin ? d.auth.signInDescription : d.auth.signUpDescription}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form action={formAction} className="space-y-4">
           {next && <input type="hidden" name="next" value={next} />}
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{d.auth.email}</Label>
             <Input id="email" name="email" type="email" autoComplete="email" required />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">{d.auth.password}</Label>
             <Input
               id="password"
               name="password"
@@ -46,18 +48,18 @@ export function AuthForm({
             />
           </div>
           <FormMessage state={state} />
-          <SubmitButton className="w-full" pendingText={isLogin ? "Signing in…" : "Creating account…"}>
-            {isLogin ? "Sign in" : "Create account"}
+          <SubmitButton className="w-full" pendingText={isLogin ? d.auth.signingIn : d.auth.creatingAccount}>
+            {isLogin ? d.auth.signIn : d.auth.createAccountButton}
           </SubmitButton>
         </form>
         <p className="mt-4 text-center text-sm text-muted-foreground">
           {isLogin ? (
             <>
-              No account? <Link className="underline" href="/signup">Sign up</Link>
+              {d.auth.noAccount} <Link className="underline" href="/signup">{d.auth.signUp}</Link>
             </>
           ) : (
             <>
-              Already registered? <Link className="underline" href="/login">Sign in</Link>
+              {d.auth.alreadyRegistered} <Link className="underline" href="/login">{d.auth.signIn}</Link>
             </>
           )}
         </p>

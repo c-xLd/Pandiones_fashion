@@ -12,12 +12,17 @@ import { PageHeader } from "@/components/studio/page-header";
 import { EmptyState } from "@/components/studio/empty-state";
 import { StatusBadge } from "@/components/studio/status-badge";
 import { ShootForm } from "./shoot-form";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
 
-export const metadata = { title: "New shoot" };
+export const generateMetadata = pageMetadata((d) => d.shoot.metaTitle);
 
 export default async function NewShootPage({ searchParams }: { searchParams: Promise<{ productId?: string; q?: string }> }) {
   const { productId, q } = await searchParams;
   const ctx = await requirePageContext("editor");
+  const { d } = await getI18n();
+  const t = d.shoot;
   const db = ctx.supabase;
   const org = ctx.org.organizationId;
 
@@ -29,15 +34,15 @@ export default async function NewShootPage({ searchParams }: { searchParams: Pro
     const products = (data ?? []) as Pick<ProductRow, "id" | "sku" | "title" | "status">[];
     return (
       <>
-        <PageHeader title="New shoot" description="Choose the product to photograph." />
+        <PageHeader title={t.title} description={t.chooseProduct} />
         <form className="mb-4 flex max-w-md gap-2" role="search">
-          <Input name="q" placeholder="Search SKU or title" defaultValue={q ?? ""} aria-label="Search products" />
+          <Input name="q" placeholder={d.products.searchPlaceholder} defaultValue={q ?? ""} aria-label={t.searchProducts} />
           <Button type="submit" variant="secondary">
-            Search
+            {d.common.search}
           </Button>
         </form>
         {products.length === 0 ? (
-          <EmptyState title="No products found" action={<Button asChild size="sm"><Link href="/products/new">Create a product</Link></Button>} />
+          <EmptyState title={t.noProducts} action={<Button asChild size="sm"><Link href="/products/new">{t.createProduct}</Link></Button>} />
         ) : (
           <Card>
             <CardContent className="divide-y p-0">
@@ -58,7 +63,7 @@ export default async function NewShootPage({ searchParams }: { searchParams: Pro
 
   const { data: product } = await db.from("products").select("*").eq("id", productId).eq("organization_id", org).maybeSingle();
   if (!product) {
-    return <EmptyState title="Product not found" action={<Button asChild size="sm"><Link href="/shoots/new">Choose another product</Link></Button>} />;
+    return <EmptyState title={t.productNotFound} action={<Button asChild size="sm"><Link href="/shoots/new">{t.chooseAnother}</Link></Button>} />;
   }
   const p = product as ProductRow;
   const [assetsRes, modelsRes, presetsRes] = await Promise.all([
@@ -74,22 +79,22 @@ export default async function NewShootPage({ searchParams }: { searchParams: Pro
   if (!assets.length) {
     return (
       <EmptyState
-        title="Upload reference images first"
-        description="A shoot needs at least one photo of the real garment."
-        action={<Button asChild size="sm"><Link href={`/products/${p.id}`}>Open product</Link></Button>}
+        title={t.uploadFirstTitle}
+        description={t.uploadFirstBody}
+        action={<Button asChild size="sm"><Link href={`/products/${p.id}`}>{t.openProduct}</Link></Button>}
       />
     );
   }
 
   let maxReferences = 6;
   let disabledReason: string | null = null;
-  if (!isGeminiConfigured()) disabledReason = "Image generation is not configured on the server (GEMINI_API_KEY / GEMINI_IMAGE_MODEL).";
+  if (!isGeminiConfigured()) disabledReason = t.geminiMissing;
   else maxReferences = geminiConfig().maxReferenceImages;
-  if (p.status === "archived") disabledReason = "This product is archived.";
+  if (p.status === "archived") disabledReason = t.archived;
 
   return (
     <>
-      <PageHeader title="New shoot" description={`Configure the generation for ${p.sku}.`} />
+      <PageHeader title={t.title} description={fmt(t.configureFor, { sku: p.sku })} />
       <ShootForm
         product={{ id: p.id, sku: p.sku, title: p.title }}
         productAssets={assets.map((a) => ({ id: a.id, role: a.role, url: a.thumbnail_path ? urls[a.thumbnail_path] ?? null : null }))}

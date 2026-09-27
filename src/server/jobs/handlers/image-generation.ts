@@ -124,7 +124,7 @@ export const imageGenerationHandler: JobHandler = {
             ...config.productReferenceAssetIds.map((id) => ({ kind: "product_asset", id })),
             ...config.modelReferenceAssetIds.map((id) => ({ kind: "model_asset", id })),
           ],
-          config: { resultId: saved.id },
+          config: { resultId: saved.id, language: config.language },
         });
       }
     }

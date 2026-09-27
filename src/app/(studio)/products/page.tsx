@@ -5,6 +5,8 @@ import { signUrls } from "@/server/storage";
 import { PRODUCT_STATUSES, productListQuerySchema } from "@/lib/domain/schemas";
 import { sanitizeSearch } from "@/lib/search";
 import { formatDateTime } from "@/lib/utils";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
 import type { ProductRow } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,20 +17,21 @@ import { EmptyState } from "@/components/studio/empty-state";
 import { StatusBadge } from "@/components/studio/status-badge";
 import { Pagination } from "@/components/studio/pagination";
 
-export const metadata = { title: "Products" };
+export const generateMetadata = pageMetadata((d) => d.products.metaTitle);
 const PAGE_SIZE = 25;
 
 const SORTS = {
-  updated_desc: { column: "updated_at", ascending: false, label: "Recently updated" },
-  created_desc: { column: "created_at", ascending: false, label: "Newest" },
-  sku_asc: { column: "sku", ascending: true, label: "SKU A–Z" },
-  title_asc: { column: "title", ascending: true, label: "Title A–Z" },
+  updated_desc: { column: "updated_at", ascending: false },
+  created_desc: { column: "created_at", ascending: false },
+  sku_asc: { column: "sku", ascending: true },
+  title_asc: { column: "title", ascending: true },
 } as const;
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const raw = await searchParams;
   const params = productListQuerySchema.catch({ sort: "updated_desc", page: 1 }).parse(raw);
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
   const org = ctx.org.organizationId;
   const sort = SORTS[params.sort];
 
@@ -58,19 +61,19 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHeader
-        title="Products"
-        description="Catalog items with their original reference photography."
+        title={d.products.title}
+        description={d.products.description}
         actions={
           canEdit && (
             <>
               <Button asChild variant="outline">
                 <Link href="/products/import">
-                  <Upload /> Bulk import
+                  <Upload /> {d.products.bulkImport}
                 </Link>
               </Button>
               <Button asChild>
                 <Link href="/products/new">
-                  <Plus /> New product
+                  <Plus /> {d.products.newProduct}
                 </Link>
               </Button>
             </>
@@ -78,44 +81,44 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         }
       />
       <form className="mb-4 grid gap-2 sm:grid-cols-[1fr_160px_160px_180px_auto]" role="search">
-        <Input name="q" placeholder="Search SKU or title" defaultValue={params.q ?? ""} aria-label="Search" />
-        <NativeSelect name="status" defaultValue={params.status ?? ""} aria-label="Status">
-          <option value="">Active (not archived)</option>
+        <Input name="q" placeholder={d.products.searchPlaceholder} defaultValue={params.q ?? ""} aria-label={d.common.search} />
+        <NativeSelect name="status" defaultValue={params.status ?? ""} aria-label={d.products.columns.status}>
+          <option value="">{d.products.activeNotArchived}</option>
           {PRODUCT_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {d.enums.productStatus[s]}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="category" defaultValue={params.category ?? ""} aria-label="Category">
-          <option value="">All categories</option>
+        <NativeSelect name="category" defaultValue={params.category ?? ""} aria-label={d.products.columns.category}>
+          <option value="">{d.products.allCategories}</option>
           {categories.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="sort" defaultValue={params.sort} aria-label="Sort">
-          {Object.entries(SORTS).map(([k, v]) => (
+        <NativeSelect name="sort" defaultValue={params.sort} aria-label={d.products.sortLabel}>
+          {(Object.keys(SORTS) as (keyof typeof SORTS)[]).map((k) => (
             <option key={k} value={k}>
-              {v.label}
+              {d.products.sorts[k]}
             </option>
           ))}
         </NativeSelect>
         <Button type="submit" variant="secondary">
-          Apply
+          {d.common.apply}
         </Button>
       </form>
 
       {rows.length === 0 ? (
         <EmptyState
           icon={Shirt}
-          title={q || params.status || params.category ? "No products match these filters" : "No products yet"}
-          description="Create a product and upload front, back, side, detail and fabric reference photos."
+          title={q || params.status || params.category ? d.products.noMatchTitle : d.products.emptyTitle}
+          description={d.products.emptyBody}
           action={
             canEdit && (
               <Button asChild size="sm">
-                <Link href="/products/new">New product</Link>
+                <Link href="/products/new">{d.products.newProduct}</Link>
               </Button>
             )
           }
@@ -125,13 +128,13 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-16">Image</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Analysis</TableHead>
-                <TableHead>Updated</TableHead>
+                <TableHead className="w-16">{d.products.columns.image}</TableHead>
+                <TableHead>{d.products.columns.sku}</TableHead>
+                <TableHead>{d.products.columns.title}</TableHead>
+                <TableHead>{d.products.columns.category}</TableHead>
+                <TableHead>{d.products.columns.status}</TableHead>
+                <TableHead>{d.products.columns.analysis}</TableHead>
+                <TableHead>{d.products.columns.updated}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,9 +164,9 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                       <StatusBadge status={p.status} />
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={p.analysis_status === "completed" ? (p.analysis_reviewed_at ? "approved" : "pending") : p.analysis_status} label={p.analysis_status === "completed" ? (p.analysis_reviewed_at ? "verified" : "needs review") : p.analysis_status} />
+                      <StatusBadge status={p.analysis_status === "completed" ? (p.analysis_reviewed_at ? "approved" : "pending") : p.analysis_status} label={p.analysis_status === "completed" ? (p.analysis_reviewed_at ? d.products.analysisVerified : d.products.analysisNeedsReview) : d.enums.analysisStatus[p.analysis_status]} />
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(p.updated_at)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(p.updated_at, locale)}</TableCell>
                   </TableRow>
                 );
               })}

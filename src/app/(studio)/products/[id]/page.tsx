@@ -12,7 +12,11 @@ import {
   updateProduct,
 } from "@/server/actions/products";
 import { isGeminiConfigured } from "@/lib/env";
-import { formatBytes, formatDateTime } from "@/lib/utils";
+import { formatBytes, formatDateTime, formatMoney } from "@/lib/utils";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
+import { shotLabel } from "@/lib/i18n/labels";
 import type { JobRow, ProductAssetRow, ProductRow, ResultRow } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,13 +32,14 @@ import { ProductForm } from "../product-form";
 import { AnalysisView } from "./analysis-view";
 import { VerifiedAttributesForm } from "./verified-attributes-form";
 
-export const metadata = { title: "Product" };
+export const generateMetadata = pageMetadata((d) => d.product.metaTitle);
 
 const CORE_ROLES = ["front", "back", "side", "detail", "fabric"] as const;
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
   const org = ctx.org.organizationId;
   const db = ctx.supabase;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
@@ -75,25 +80,25 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             <>
               <Button asChild>
                 <Link href={`/shoots/new?productId=${p.id}`}>
-                  <Camera /> New shoot
+                  <Camera /> {d.product.newShoot}
                 </Link>
               </Button>
               {p.status === "archived" ? (
                 <ActionButton variant="outline" action={setProductStatus.bind(null, p.id, "draft")}>
-                  <ArchiveRestore /> Unarchive
+                  <ArchiveRestore /> {d.product.unarchive}
                 </ActionButton>
               ) : (
                 <ActionButton variant="outline" action={setProductStatus.bind(null, p.id, "archived")}>
-                  <Archive /> Archive
+                  <Archive /> {d.product.archive}
                 </ActionButton>
               )}
               {isAdmin && (
                 <ActionButton
                   variant="destructive"
                   action={deleteProduct.bind(null, p.id)}
-                  confirm={`Delete product ${p.sku} and its source images? Generated results stay in the media library.`}
+                  confirm={fmt(d.product.deleteConfirm, { sku: p.sku })}
                 >
-                  <Trash2 /> Delete
+                  <Trash2 /> {d.common.delete}
                 </ActionButton>
               )}
             </>
@@ -105,10 +110,10 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Reference images</CardTitle>
+              <CardTitle>{d.product.referenceImages}</CardTitle>
               <CardDescription>
-                Original uploads are preserved and never overwritten by generated results.{" "}
-                {missing.length > 0 && <span>Missing angles: {missing.join(", ")}.</span>}
+                {d.product.referenceDescription}{" "}
+                {missing.length > 0 && <span>{fmt(d.product.missingAngles, { angles: missing.map((r) => d.enums.assetRole[r]).join(", ") })}</span>}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -116,7 +121,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                 <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {assets.map((a) => (
                     <li key={a.id} className="space-y-1.5">
-                      <MediaThumb src={a.thumbnail_path ? urls[a.thumbnail_path] : null} alt={`${a.role} reference`} />
+                      <MediaThumb src={a.thumbnail_path ? urls[a.thumbnail_path] : null} alt={d.enums.assetRole[a.role]} />
                       <AssetRoleSelect assetId={a.id} role={a.role} disabled={!canEdit} />
                       <p className="truncate text-[11px] text-muted-foreground" title={a.original_filename ?? ""}>
                         {a.width}×{a.height} · {formatBytes(a.size_bytes)}
@@ -127,9 +132,9 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                           variant="ghost"
                           className="h-7 px-2 text-xs"
                           action={deleteProductAsset.bind(null, a.id)}
-                          confirm="Remove this reference image?"
+                          confirm={d.product.removeImageConfirm}
                         >
-                          <Trash2 /> Remove
+                          <Trash2 /> {d.common.remove}
                         </ActionButton>
                       )}
                     </li>
@@ -143,9 +148,9 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           <Card>
             <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
               <div>
-                <CardTitle>AI product analysis</CardTitle>
+                <CardTitle>{d.product.analysisTitle}</CardTitle>
                 <CardDescription>
-                  Screening only: AI observations are hints, not verified facts. Confirm or correct them below.
+                  {d.product.analysisDescription}
                 </CardDescription>
               </div>
               {canEdit && (
@@ -154,28 +159,28 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                   size="sm"
                   action={requestAnalysis.bind(null, p.id)}
                   disabled={!assets.length || p.analysis_status === "queued" || !isGeminiConfigured()}
-                  successText="Analysis queued"
+                  successText={d.product.analysisQueued}
                 >
-                  <ScanSearch /> {p.ai_analysis ? "Re-analyze" : "Analyze images"}
+                  <ScanSearch /> {p.ai_analysis ? d.product.reanalyze : d.product.analyze}
                 </ActionButton>
               )}
             </CardHeader>
             <CardContent className="space-y-4">
               {!isGeminiConfigured() && (
                 <Alert variant="warning">
-                  <AlertDescription>Gemini is not configured on the server, so analysis is unavailable.</AlertDescription>
+                  <AlertDescription>{d.product.geminiMissing}</AlertDescription>
                 </Alert>
               )}
-              {p.analysis_status === "queued" && <p className="text-sm text-muted-foreground">Analysis is queued / running in the background…</p>}
+              {p.analysis_status === "queued" && <p className="text-sm text-muted-foreground">{d.product.analysisRunning}</p>}
               {p.analysis_status === "failed" && (
                 <Alert variant="destructive">
-                  <AlertDescription>The last analysis failed. See the Jobs page for details, then retry.</AlertDescription>
+                  <AlertDescription>{d.product.analysisFailed}</AlertDescription>
                 </Alert>
               )}
               {p.ai_analysis ? (
                 <AnalysisView analysis={p.ai_analysis} model={p.analysis_model} analyzedAt={p.analyzed_at} />
               ) : (
-                p.analysis_status === "none" && <p className="text-sm text-muted-foreground">No analysis yet.</p>
+                p.analysis_status === "none" && <p className="text-sm text-muted-foreground">{d.product.noAnalysis}</p>
               )}
               <VerifiedAttributesForm
                 action={saveVerifiedAttributes.bind(null, p.id)}
@@ -189,19 +194,19 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
           <Card>
             <CardHeader>
-              <CardTitle>Generation history</CardTitle>
+              <CardTitle>{d.product.historyTitle}</CardTitle>
               <CardDescription>
-                {results.length} recent results · estimated/known cost for this product: ${costTotal.toFixed(4)}
+                {fmt(d.product.historyDescription, { count: results.length, cost: formatMoney(costTotal, "USD", 4, locale) })}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {results.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No generated media yet.</p>
+                <p className="text-sm text-muted-foreground">{d.product.noMedia}</p>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                   {results.map((r) => (
                     <Link key={r.id} href={r.kind === "video" && r.video_project_id ? `/video/${r.video_project_id}` : `/results/${r.id}`} className="space-y-1">
-                      <MediaThumb src={r.thumbnail_path ? urls[r.thumbnail_path] : null} alt={`${r.shot_type ?? r.kind} result`} kind={r.kind} />
+                      <MediaThumb src={r.thumbnail_path ? urls[r.thumbnail_path] : null} alt={r.shot_type ?? r.kind} kind={r.kind} />
                       <div className="flex flex-wrap gap-1">
                         <StatusBadge status={r.review_status} />
                         {r.kind === "image" && <QcBadge status={r.qc_status} />}
@@ -216,15 +221,15 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                     <li key={j.id} className="flex flex-wrap items-center justify-between gap-2 p-2">
                       <span className="flex items-center gap-2">
                         <StatusBadge status={j.status} />
-                        <span>{j.job_type.replace(/_/g, " ")}</span>
+                        <span>{d.enums.jobType[j.job_type]}</span>
                         {typeof j.config.style === "object" && j.config.style && (
-                          <span className="text-muted-foreground">· {(j.config.style as { shotType?: string }).shotType}</span>
+                          <span className="text-muted-foreground">· {shotLabel(d, (j.config.style as { shotType?: string }).shotType)}</span>
                         )}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {formatDateTime(j.created_at)}{" "}
+                        {formatDateTime(j.created_at, locale)}{" "}
                         <Link className="underline" href={`/jobs?batch=${j.batch_id ?? ""}`}>
-                          details
+                          {d.common.details}
                         </Link>
                       </span>
                     </li>
@@ -237,7 +242,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle>Product details</CardTitle>
+            <CardTitle>{d.product.detailsTitle}</CardTitle>
           </CardHeader>
           <CardContent>
             <ProductForm action={updateProduct.bind(null, p.id)} product={p} readOnly={!canEdit} />

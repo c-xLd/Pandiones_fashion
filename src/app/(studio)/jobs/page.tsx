@@ -5,6 +5,10 @@ import { cancelJob, retryJob } from "@/server/actions/generation";
 import { JOB_STATUSES, JOB_TYPES } from "@/lib/domain/schemas";
 import { formatDateTime } from "@/lib/utils";
 import type { JobRow } from "@/lib/types";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
+import { jobErrorLabel, shotLabel } from "@/lib/i18n/labels";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -17,7 +21,7 @@ import { Pagination } from "@/components/studio/pagination";
 import { ActionButton } from "@/components/studio/action-button";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 
-export const metadata = { title: "Jobs" };
+export const generateMetadata = pageMetadata((d) => d.jobs.metaTitle);
 const PAGE_SIZE = 50;
 
 function duration(job: JobRow): string {
@@ -30,6 +34,8 @@ function duration(job: JobRow): string {
 export default async function JobsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
+  const t = d.jobs;
   const org = ctx.org.organizationId;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
   const status = sp.status;
@@ -61,85 +67,82 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader
-        title="Generation queue"
+        title={t.title}
         description={
           <span className="flex flex-wrap items-center gap-3">
-            Durable background jobs. Closing the browser does not stop them.
+            {t.description}
             <AutoRefresh active={active} />
           </span>
         }
       />
       {stalledMinutes > 5 && (
         <Alert variant="warning" className="mb-4">
-          <AlertTitle>Jobs are waiting longer than expected</AlertTitle>
-          <AlertDescription>
-            The oldest runnable job has been queued for {Math.round(stalledMinutes)} minutes. Check that the worker is scheduled (Vercel Cron or{" "}
-            <code>npm run worker</code>) — see docs/OPERATIONS.md.
-          </AlertDescription>
+          <AlertTitle>{t.stalledTitle}</AlertTitle>
+          <AlertDescription>{fmt(t.stalledBody, { minutes: Math.round(stalledMinutes) })}</AlertDescription>
         </Alert>
       )}
       <form className="mb-4 grid gap-2 sm:grid-cols-[180px_200px_auto]">
-        <NativeSelect name="status" defaultValue={status ?? ""} aria-label="Status">
-          <option value="">All statuses</option>
-          <option value="active">Active (queued + processing)</option>
+        <NativeSelect name="status" defaultValue={status ?? ""} aria-label={t.columns.status}>
+          <option value="">{t.allStatuses}</option>
+          <option value="active">{t.activeStatuses}</option>
           {JOB_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {d.enums.jobStatus[s]}
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="type" defaultValue={type ?? ""} aria-label="Job type">
-          <option value="">All types</option>
-          {JOB_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t.replace(/_/g, " ")}
+        <NativeSelect name="type" defaultValue={type ?? ""} aria-label={t.columns.type}>
+          <option value="">{t.allTypes}</option>
+          {JOB_TYPES.map((jt) => (
+            <option key={jt} value={jt}>
+              {d.enums.jobType[jt]}
             </option>
           ))}
         </NativeSelect>
         <div className="flex gap-2">
           {batch && <input type="hidden" name="batch" value={batch} />}
           <Button type="submit" variant="secondary">
-            Filter
+            {d.common.filter}
           </Button>
           {batch && (
             <Button asChild variant="ghost">
-              <Link href="/jobs">Clear batch filter</Link>
+              <Link href="/jobs">{t.clearBatch}</Link>
             </Button>
           )}
           {batch && (
             <Button asChild variant="outline">
-              <Link href={`/review?batch=${batch}`}>Review this batch</Link>
+              <Link href={`/review?batch=${batch}`}>{t.reviewBatch}</Link>
             </Button>
           )}
         </div>
       </form>
 
       {jobs.length === 0 ? (
-        <EmptyState icon={ListChecks} title="No jobs" description="Start a shoot or run a product analysis to create jobs." />
+        <EmptyState icon={ListChecks} title={t.emptyTitle} description={t.emptyBody} />
       ) : (
         <div className="rounded-xl border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Created</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead className="w-44">Status</TableHead>
-                <TableHead>Attempts</TableHead>
-                <TableHead>Model</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Details</TableHead>
+                <TableHead>{t.columns.created}</TableHead>
+                <TableHead>{t.columns.type}</TableHead>
+                <TableHead>{t.columns.product}</TableHead>
+                <TableHead className="w-44">{t.columns.status}</TableHead>
+                <TableHead>{t.columns.attempts}</TableHead>
+                <TableHead>{t.columns.model}</TableHead>
+                <TableHead>{t.columns.duration}</TableHead>
+                <TableHead>{t.columns.details}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs.map((j) => (
                 <TableRow key={j.id}>
-                  <TableCell className="whitespace-nowrap text-xs">{formatDateTime(j.created_at)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{formatDateTime(j.created_at, locale)}</TableCell>
                   <TableCell className="text-xs">
-                    {j.job_type.replace(/_/g, " ")}
+                    {d.enums.jobType[j.job_type]}
                     {typeof j.config.style === "object" && j.config.style && (
-                      <span className="block text-muted-foreground">{(j.config.style as { shotType?: string }).shotType}</span>
+                      <span className="block text-muted-foreground">{shotLabel(d, (j.config.style as { shotType?: string }).shotType)}</span>
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
@@ -148,8 +151,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                   <TableCell>
                     <div className="space-y-1">
                       <StatusBadge status={j.status} />
-                      {j.status === "processing" && <Progress value={j.progress} label="Job progress" />}
-                      {j.cancel_requested && j.status === "processing" && <span className="block text-[11px] text-muted-foreground">cancel requested</span>}
+                      {j.status === "processing" && <Progress value={j.progress} label={t.progress} />}
+                      {j.cancel_requested && j.status === "processing" && <span className="block text-[11px] text-muted-foreground">{t.cancelRequested}</span>}
                     </div>
                   </TableCell>
                   <TableCell className="text-xs">
@@ -162,25 +165,28 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                   <TableCell className="max-w-[280px] text-xs">
                     {j.error_message && (
                       <span className={j.status === "failed" ? "text-destructive" : "text-muted-foreground"} title={j.error_message}>
-                        {j.status === "queued" && j.attempts > 0 ? `Retrying after: ` : ""}
-                        {j.error_message.slice(0, 160)}
+                        {j.status === "queued" && j.attempts > 0 ? t.retryingAfter : ""}
+                        {jobErrorLabel(d, j.error_code) ?? j.error_message.slice(0, 160)}
+                        {jobErrorLabel(d, j.error_code) && (
+                          <span className="block text-[10px] text-muted-foreground">{j.error_message.slice(0, 160)}</span>
+                        )}
                       </span>
                     )}
                     {j.provider_request_id && (
                       <span className="block truncate text-muted-foreground" title={j.provider_request_id}>
-                        req: {j.provider_request_id}
+                        {fmt(t.request, { id: j.provider_request_id })}
                       </span>
                     )}
                   </TableCell>
                   <TableCell>
                     {canEdit && (j.status === "queued" || (j.status === "processing" && !j.cancel_requested)) && (
-                      <ActionButton size="sm" variant="ghost" action={cancelJob.bind(null, j.id)} confirm="Cancel this job? Work already sent to the provider may still be billed.">
-                        <XCircle /> Cancel
+                      <ActionButton size="sm" variant="ghost" action={cancelJob.bind(null, j.id)} confirm={t.cancelConfirm}>
+                        <XCircle /> {d.common.cancel}
                       </ActionButton>
                     )}
                     {canEdit && (j.status === "failed" || j.status === "cancelled") && (
                       <ActionButton size="sm" variant="ghost" action={retryJob.bind(null, j.id)}>
-                        <RotateCcw /> Retry
+                        <RotateCcw /> {d.common.retry}
                       </ActionButton>
                     )}
                   </TableCell>

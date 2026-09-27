@@ -40,20 +40,33 @@ export function sniffMimeType(bytes: Uint8Array): string | null {
   return null;
 }
 
+export type UploadErrorKey =
+  | "unsupportedType"
+  | "fileEmpty"
+  | "fileTooLarge"
+  | "fileNameTooLong"
+  | "notAnImage"
+  | "noDimensions"
+  | "imageTooSmall"
+  | "imageTooBig";
+
+/** Errors are dictionary keys (d.errors.*) + variables, so both server and browser can localize them. */
 export type UploadValidation =
   | { ok: true; mimeType: ImageMimeType }
-  | { ok: false; error: string };
+  | { ok: false; error: UploadErrorKey; vars: Record<string, string | number> };
+
+const fail = (error: UploadErrorKey, vars: Record<string, string | number> = {}): UploadValidation => ({ ok: false, error, vars });
 
 /** Pre-upload check on the metadata the browser declares. */
 export function validateDeclaredImage(input: { name: string; size: number; type: string }): UploadValidation {
   if (!IMAGE_MIME_TYPES.includes(input.type as ImageMimeType)) {
-    return { ok: false, error: `Unsupported file type "${input.type || "unknown"}". Use JPEG, PNG or WebP.` };
+    return fail("unsupportedType", { type: input.type || "?" });
   }
-  if (input.size <= 0) return { ok: false, error: "File is empty." };
+  if (input.size <= 0) return fail("fileEmpty");
   if (input.size > MAX_IMAGE_BYTES) {
-    return { ok: false, error: `File is larger than ${MAX_IMAGE_BYTES / 1024 / 1024} MB.` };
+    return fail("fileTooLarge", { mb: MAX_IMAGE_BYTES / 1024 / 1024 });
   }
-  if (input.name.length > 255) return { ok: false, error: "File name is too long." };
+  if (input.name.length > 255) return fail("fileNameTooLong");
   return { ok: true, mimeType: input.type as ImageMimeType };
 }
 
@@ -62,20 +75,20 @@ export function validateImageBytes(
   bytes: Uint8Array,
   dims?: { width?: number; height?: number },
 ): UploadValidation {
-  if (bytes.byteLength === 0) return { ok: false, error: "File is empty." };
-  if (bytes.byteLength > MAX_IMAGE_BYTES) return { ok: false, error: "File exceeds the maximum size." };
+  if (bytes.byteLength === 0) return fail("fileEmpty");
+  if (bytes.byteLength > MAX_IMAGE_BYTES) return fail("fileTooLarge", { mb: MAX_IMAGE_BYTES / 1024 / 1024 });
   const sniffed = sniffMimeType(bytes);
   if (!sniffed || !IMAGE_MIME_TYPES.includes(sniffed as ImageMimeType)) {
-    return { ok: false, error: "File content is not a valid JPEG, PNG or WebP image." };
+    return fail("notAnImage");
   }
   if (dims) {
     const { width, height } = dims;
-    if (!width || !height) return { ok: false, error: "Could not read image dimensions." };
+    if (!width || !height) return fail("noDimensions");
     if (Math.min(width, height) < MIN_IMAGE_DIMENSION) {
-      return { ok: false, error: `Image is too small (${width}×${height}); minimum side is ${MIN_IMAGE_DIMENSION}px.` };
+      return fail("imageTooSmall", { width, height, min: MIN_IMAGE_DIMENSION });
     }
     if (Math.max(width, height) > MAX_IMAGE_DIMENSION) {
-      return { ok: false, error: `Image is too large (${width}×${height}).` };
+      return fail("imageTooBig", { width, height });
     }
   }
   return { ok: true, mimeType: sniffed as ImageMimeType };

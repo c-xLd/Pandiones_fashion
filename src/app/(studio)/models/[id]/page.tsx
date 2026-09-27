@@ -16,14 +16,17 @@ import { ImageUploader } from "@/components/studio/image-uploader";
 import { MediaThumb } from "@/components/studio/media-thumb";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 import { ModelForm } from "../model-form";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
 import { PortraitGenerator } from "./portrait-generator";
 
-export const metadata = { title: "Model profile" };
+export const generateMetadata = pageMetadata((d) => d.model.metaTitle);
 
 export default async function ModelPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const ctx = await requirePageContext();
+  const { d } = await getI18n();
   const org = ctx.org.organizationId;
   const db = ctx.supabase;
   const { data } = await db.from("model_profiles").select("*").eq("id", id).eq("organization_id", org).maybeSingle();
@@ -66,10 +69,9 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Approved reference images</CardTitle>
+              <CardTitle>{d.model.referencesTitle}</CardTitle>
               <CardDescription>
-                Reference images are sent with each shoot to help keep the same identity. This improves consistency but does not guarantee it — compare results
-                below.
+                {d.model.referencesDescription}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -77,19 +79,19 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
                 <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                   {assets.map((a) => (
                     <li key={a.id} className="space-y-1">
-                      <MediaThumb src={a.thumbnail_path ? urls[a.thumbnail_path] : null} alt="Model reference" />
+                      <MediaThumb src={a.thumbnail_path ? urls[a.thumbnail_path] : null} alt={d.model.modelReference} />
                       <div className="flex flex-wrap items-center gap-1">
-                        {a.is_primary && <Badge variant="success">primary</Badge>}
-                        <Badge variant="outline">{a.source}</Badge>
+                        {a.is_primary && <Badge variant="success">{d.model.primary}</Badge>}
+                        <Badge variant="outline">{d.enums.storageSource[a.source]}</Badge>
                       </div>
                       {canEdit && (
                         <div className="flex flex-wrap">
                           {!a.is_primary && (
                             <ActionButton size="sm" variant="ghost" className="h-7 px-2 text-xs" action={setPrimaryModelAsset.bind(null, model.id, a.id)}>
-                              <Star /> Primary
+                              <Star /> {d.model.makePrimary}
                             </ActionButton>
                           )}
-                          <ActionButton size="sm" variant="ghost" className="h-7 px-2 text-xs" action={deleteModelAsset.bind(null, a.id)} confirm="Remove this reference?">
+                          <ActionButton size="sm" variant="ghost" className="h-7 px-2 text-xs" action={deleteModelAsset.bind(null, a.id)} confirm={d.model.removeReferenceConfirm}>
                             <Trash2 />
                           </ActionButton>
                         </div>
@@ -104,8 +106,8 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
 
           <Card>
             <CardHeader>
-              <CardTitle>Reference portraits</CardTitle>
-              <CardDescription>Generate a synthetic casting portrait, approve it, then add it to the reference set.</CardDescription>
+              <CardTitle>{d.model.portraitsTitle}</CardTitle>
+              <CardDescription>{d.model.portraitsDescription}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {canEdit && (
@@ -113,7 +115,7 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
                   modelId={model.id}
                   references={assets.map((a) => ({ id: a.id, url: a.thumbnail_path ? urls[a.thumbnail_path] ?? null : null }))}
                   disabledReason={
-                    !isGeminiConfigured() ? "Image generation is not configured on the server." : model.status === "retired" ? "This model is retired." : null
+                    !isGeminiConfigured() ? d.model.geminiMissing : model.status === "retired" ? d.model.retired : null
                   }
                 />
               )}
@@ -122,20 +124,20 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
                   {portraits.map((p) => (
                     <li key={p.id} className="space-y-1">
                       <Link href={`/results/${p.id}`}>
-                        <MediaThumb src={p.thumbnail_path ? urls[p.thumbnail_path] : null} alt="Generated portrait" />
+                        <MediaThumb src={p.thumbnail_path ? urls[p.thumbnail_path] : null} alt={d.model.generatedPortrait} />
                       </Link>
                       <StatusBadge status={p.review_status} />
                       {canEdit && p.review_status === "pending" && (
                         <ActionButton size="sm" variant="outline" className="h-7 text-xs" action={reviewResults.bind(null, { resultIds: [p.id], decision: "approved" })}>
-                          Approve
+                          {d.common.approve}
                         </ActionButton>
                       )}
                       {canEdit && p.review_status === "approved" && !promoted.has(p.id) && (
                         <ActionButton size="sm" variant="secondary" className="h-7 text-xs" action={promoteResultToModelReference.bind(null, p.id)}>
-                          <UserPlus /> Add as reference
+                          <UserPlus /> {d.model.addAsReference}
                         </ActionButton>
                       )}
-                      {promoted.has(p.id) && <Badge variant="success">in references</Badge>}
+                      {promoted.has(p.id) && <Badge variant="success">{d.model.inReferences}</Badge>}
                     </li>
                   ))}
                 </ul>
@@ -145,19 +147,19 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
 
           <Card>
             <CardHeader>
-              <CardTitle>Consistency check</CardTitle>
-              <CardDescription>Latest product shots with this model next to the primary reference. Review identity drift before approving.</CardDescription>
+              <CardTitle>{d.model.consistencyTitle}</CardTitle>
+              <CardDescription>{d.model.consistencyDescription}</CardDescription>
             </CardHeader>
             <CardContent>
               {shots.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No product shots with this model yet.</p>
+                <p className="text-sm text-muted-foreground">{d.model.noShots}</p>
               ) : (
                 <div className="grid grid-cols-[120px_1fr] gap-4">
                   <div>
-                    <p className="mb-1 text-xs font-medium text-muted-foreground">Primary reference</p>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">{d.model.primaryReference}</p>
                     {(() => {
                       const primary = assets.find((a) => a.is_primary) ?? assets[0];
-                      return <MediaThumb src={primary?.thumbnail_path ? urls[primary.thumbnail_path] : null} alt="Primary reference" />;
+                      return <MediaThumb src={primary?.thumbnail_path ? urls[primary.thumbnail_path] : null} alt={d.model.primaryReference} />;
                     })()}
                   </div>
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
@@ -165,7 +167,7 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
                       <Link key={s.id} href={`/results/${s.id}`} className="space-y-1">
                         <MediaThumb src={s.thumbnail_path ? urls[s.thumbnail_path] : null} alt={`${s.products?.sku ?? ""} ${s.shot_type ?? ""}`} />
                         <p className="truncate text-[11px] text-muted-foreground">{s.products?.sku ?? "—"}</p>
-                        {s.qc_flags?.some((f) => f.type === "identity_inconsistency") && <Badge variant="warning">identity flag</Badge>}
+                        {s.qc_flags?.some((f) => f.type === "identity_inconsistency") && <Badge variant="warning">{d.model.identityFlag}</Badge>}
                       </Link>
                     ))}
                   </div>
@@ -176,7 +178,7 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
         </div>
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle>Profile</CardTitle>
+            <CardTitle>{d.model.profile}</CardTitle>
           </CardHeader>
           <CardContent>
             <ModelForm action={updateModelProfile.bind(null, model.id)} model={model} readOnly={!canEdit} />

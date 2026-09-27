@@ -1,5 +1,6 @@
 "use server";
 
+import { getI18n } from "@/lib/i18n/server";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -33,11 +34,11 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
 
     const total = req.shotTypes.length * req.style.variations;
     if (total > MAX_JOBS_PER_SHOOT) {
-      throw new UserFacingError(`This shoot would create ${total} images; the maximum per submission is ${MAX_JOBS_PER_SHOOT}.`);
+      throw new UserFacingError("shootTooLarge", { total, max: MAX_JOBS_PER_SHOOT });
     }
     const refCount = req.productReferenceAssetIds.length + req.modelReferenceAssetIds.length;
     if (refCount > cfg.maxReferenceImages) {
-      throw new UserFacingError(`Select at most ${cfg.maxReferenceImages} reference images in total (currently ${refCount}).`);
+      throw new UserFacingError("tooManyReferences", { max: cfg.maxReferenceImages, count: refCount });
     }
 
     // Verify every referenced record belongs to this organization.
@@ -45,22 +46,22 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
       await ctx.supabase.from("products").select("id, status").eq("id", req.productId).eq("organization_id", org).maybeSingle(),
       "Load product",
     ) as { id: string; status: string } | null;
-    if (!product) throw new UserFacingError("Product not found.");
-    if (product.status === "archived") throw new UserFacingError("Archived products cannot be used for new shoots.");
+    if (!product) throw new UserFacingError("productNotFound");
+    if (product.status === "archived") throw new UserFacingError("productArchived");
 
     const assets = check(
       await ctx.supabase.from("product_assets").select("id").eq("product_id", req.productId).eq("organization_id", org).in("id", req.productReferenceAssetIds),
       "Load assets",
     ) as { id: string }[];
-    if (assets.length !== new Set(req.productReferenceAssetIds).size) throw new UserFacingError("Some product reference images are invalid.");
+    if (assets.length !== new Set(req.productReferenceAssetIds).size) throw new UserFacingError("invalidProductRefs");
 
     if (req.modelProfileId) {
       const model = check(
         await ctx.supabase.from("model_profiles").select("id, status").eq("id", req.modelProfileId).eq("organization_id", org).maybeSingle(),
         "Load model",
       ) as { id: string; status: string } | null;
-      if (!model) throw new UserFacingError("Model profile not found.");
-      if (model.status === "retired") throw new UserFacingError("Retired model profiles cannot be used.");
+      if (!model) throw new UserFacingError("modelNotFound");
+      if (model.status === "retired") throw new UserFacingError("modelProfileRetired");
       if (req.modelReferenceAssetIds.length) {
         const modelAssets = check(
           await ctx.supabase
@@ -71,18 +72,19 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
             .in("id", req.modelReferenceAssetIds),
           "Load model assets",
         ) as { id: string }[];
-        if (modelAssets.length !== new Set(req.modelReferenceAssetIds).size) throw new UserFacingError("Some model reference images are invalid.");
+        if (modelAssets.length !== new Set(req.modelReferenceAssetIds).size) throw new UserFacingError("invalidModelRefs");
       }
     } else if (req.modelReferenceAssetIds.length) {
-      throw new UserFacingError("Model reference images require a model profile.");
+      throw new UserFacingError("modelRefsNeedProfile");
     }
 
     if (req.presetId) {
       const preset = check(await ctx.supabase.from("shoot_presets").select("id").eq("id", req.presetId).maybeSingle(), "Load preset");
-      if (!preset) throw new UserFacingError("Preset not found.");
+      if (!preset) throw new UserFacingError("presetNotFound");
     }
 
     const batchId = randomUUID();
+    const { locale } = await getI18n();
     const jobs: EnqueueInput[] = [];
     for (const shotType of req.shotTypes) {
       for (let v = 0; v < req.style.variations; v++) {
@@ -94,6 +96,7 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
           modelReferenceAssetIds: req.modelReferenceAssetIds,
           variationIndex: v,
           regenerationNote: null,
+          language: locale,
         };
         jobs.push({
           jobType: "image_generation",
@@ -141,13 +144,13 @@ export async function regenerateResult(input: z.input<typeof regenerateSchema>):
       await ctx.supabase.from("generation_results").select("*").eq("id", data.resultId).eq("organization_id", org).maybeSingle(),
       "Load result",
     ) as ResultRow | null;
-    if (!result) throw new UserFacingError("Result not found.");
+    if (!result) throw new UserFacingError("resultNotFound");
     const job = check(
       await ctx.supabase.from("generation_jobs").select("*").eq("id", result.job_id).eq("organization_id", org).single(),
       "Load job",
     ) as JobRow;
     if (job.job_type !== "image_generation" && job.job_type !== "model_portrait") {
-      throw new UserFacingError("Only image results can be regenerated here.");
+      throw new UserFacingError("onlyImagesRegenerate");
     }
     const cfg = geminiConfig();
     let config: Record<string, unknown> = job.config;
@@ -187,8 +190,8 @@ export async function retryJob(jobId: string): Promise<ActionResult<{ jobId: str
       await ctx.supabase.from("generation_jobs").select("*").eq("id", z.uuid().parse(jobId)).eq("organization_id", org).maybeSingle(),
       "Load job",
     ) as JobRow | null;
-    if (!job) throw new UserFacingError("Job not found.");
-    if (job.status !== "failed" && job.status !== "cancelled") throw new UserFacingError("Only failed or cancelled jobs can be retried.");
+    if (!job) throw new UserFacingError("jobNotFound");
+    if (job.status !== "failed" && job.status !== "cancelled") throw new UserFacingError("onlyFailedRetry");
     const cfg = geminiConfig();
     const model =
       job.job_type === "image_generation" || job.job_type === "model_portrait"
@@ -305,13 +308,13 @@ export async function savePreset(presetId: string | null, _prev: PresetFormState
         await ctx.supabase.from("shoot_presets").update(input).eq("id", z.uuid().parse(presetId)).eq("organization_id", org).select("id"),
         "Update preset",
       ) as { id: string }[];
-      if (!rows.length) throw new UserFacingError("Preset not found or read-only.");
+      if (!rows.length) throw new UserFacingError("presetReadOnly");
     } else {
       check(await ctx.supabase.from("shoot_presets").insert({ ...input, organization_id: org, created_by: ctx.userId }), "Create preset");
     }
     await audit({ organizationId: org, actorId: ctx.userId, action: presetId ? "preset.updated" : "preset.created", entityType: "shoot_preset", entityId: presetId });
     revalidatePath("/presets");
-    return { ok: true, message: "Preset saved." };
+    return { ok: true, message: (await getI18n()).d.presets.saved };
   } catch (error) {
     return toActionError(error, "savePreset");
   }
@@ -324,7 +327,7 @@ export async function deletePreset(presetId: string): Promise<ActionResult> {
       await ctx.supabase.from("shoot_presets").delete().eq("id", z.uuid().parse(presetId)).eq("organization_id", ctx.org.organizationId).select("id"),
       "Delete preset",
     ) as { id: string }[];
-    if (!rows.length) throw new UserFacingError("Preset not found or read-only.");
+    if (!rows.length) throw new UserFacingError("presetReadOnly");
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "preset.deleted", entityType: "shoot_preset", entityId: presetId });
     revalidatePath("/presets");
     return undefined;

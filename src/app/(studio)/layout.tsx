@@ -5,26 +5,30 @@ import { SidebarNav } from "@/components/studio/sidebar-nav";
 import { MobileNav } from "@/components/studio/mobile-nav";
 import { OrgSwitcher } from "@/components/studio/org-switcher";
 import { Button } from "@/components/ui/button";
+import { LanguageSwitcher } from "@/components/studio/language-switcher";
+import { getI18n } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requirePageContext();
+  const { d } = await getI18n();
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-card p-4 lg:flex">
         <div className="mb-6 px-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-brand">Pandiones</p>
-          <p className="text-lg font-semibold tracking-tight">Fashion Studio</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-brand">{d.common.brand}</p>
+          <p className="text-lg font-semibold tracking-tight">{d.common.studio}</p>
         </div>
         <SidebarNav />
         <div className="mt-auto space-y-3 border-t pt-4">
           <OrgSwitcher memberships={ctx.memberships} activeId={ctx.org.organizationId} />
+          <LanguageSwitcher className="px-1" />
           <form action={signOut} className="flex items-center justify-between gap-2 px-1">
             <span className="truncate text-xs text-muted-foreground" title={ctx.email ?? undefined}>
               {ctx.email}
             </span>
-            <Button type="submit" variant="ghost" size="icon" aria-label="Sign out">
+            <Button type="submit" variant="ghost" size="icon" aria-label={d.common.signOut}>
               <LogOut />
             </Button>
           </form>
@@ -33,10 +37,10 @@ export default async function StudioLayout({ children }: { children: React.React
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b bg-card px-4 py-3 lg:hidden">
           <MobileNav />
-          <p className="font-semibold">Pandiones Studio</p>
+          <p className="font-semibold">{d.meta.appName}</p>
           <form action={signOut} className="ml-auto">
             <Button type="submit" variant="ghost" size="sm">
-              Sign out
+              {d.common.signOut}
             </Button>
           </form>
         </header>

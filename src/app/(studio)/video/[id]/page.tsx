@@ -17,13 +17,19 @@ import { PageHeader } from "@/components/studio/page-header";
 import { StatusBadge } from "@/components/studio/status-badge";
 import { ActionButton } from "@/components/studio/action-button";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
+import { fmt } from "@/lib/i18n/config";
+import { jobErrorLabel } from "@/lib/i18n/labels";
 
-export const metadata = { title: "Video project" };
+export const generateMetadata = pageMetadata((d) => d.video.project.metaTitle);
 
 export default async function VideoProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
+  const t = d.video.project;
   const org = ctx.org.organizationId;
   const db = ctx.supabase;
   const { data } = await db.from("video_projects").select("*, products(id, sku)").eq("id", id).eq("organization_id", org).maybeSingle();
@@ -56,9 +62,9 @@ export default async function VideoProjectPage({ params }: { params: Promise<{ i
         title={project.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{project.kind} video</Badge>
+            <Badge variant="outline">{fmt(t.kindVideo, { kind: d.enums.videoKind[project.kind] })}</Badge>
             <StatusBadge status={project.status} />
-            <StatusBadge status={project.approval_status} label={`approval: ${project.approval_status}`} />
+            <StatusBadge status={project.approval_status} label={fmt(t.approval, { status: d.enums.reviewStatus[project.approval_status] })} />
             <AutoRefresh active={active} intervalMs={10000} />
           </span>
         }
@@ -66,23 +72,23 @@ export default async function VideoProjectPage({ params }: { params: Promise<{ i
           canEdit && (
             <>
               {active && latestJob && !latestJob.cancel_requested && (
-                <ActionButton variant="outline" action={cancelJob.bind(null, latestJob.id)} confirm="Cancel? A submitted provider operation may still complete and be billed.">
-                  <XCircle /> Cancel
+                <ActionButton variant="outline" action={cancelJob.bind(null, latestJob.id)} confirm={t.cancelConfirm}>
+                  <XCircle /> {d.common.cancel}
                 </ActionButton>
               )}
               {(project.status === "failed" || project.status === "cancelled") && latestJob && (
                 <ActionButton variant="outline" action={retryJob.bind(null, latestJob.id)}>
-                  <RotateCcw /> Retry
+                  <RotateCcw /> {d.common.retry}
                 </ActionButton>
               )}
               {project.status === "ready" && project.approval_status !== "approved" && (
                 <ActionButton variant="success" action={setVideoApproval.bind(null, project.id, "approved")}>
-                  <Check /> Approve
+                  <Check /> {d.common.approve}
                 </ActionButton>
               )}
               {project.status === "ready" && project.approval_status !== "rejected" && (
                 <ActionButton variant="destructive" action={setVideoApproval.bind(null, project.id, "rejected")}>
-                  <X /> Reject
+                  <X /> {d.common.reject}
                 </ActionButton>
               )}
             </>
@@ -92,21 +98,23 @@ export default async function VideoProjectPage({ params }: { params: Promise<{ i
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <Card>
           <CardHeader>
-            <CardTitle>Preview</CardTitle>
+            <CardTitle>{t.preview}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {active && latestJob && (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">
-                  Generating in the background ({latestJob.status}
-                  {latestJob.provider_operation ? ", submitted to provider" : ""}). This usually takes a few minutes; you can leave this page.
+                  {fmt(t.generating, { status: d.enums.jobStatus[latestJob.status], submitted: latestJob.provider_operation ? t.submitted : "" })}
                 </p>
-                <Progress value={latestJob.progress} label="Video progress" />
+                <Progress value={latestJob.progress} label={t.progress} />
               </div>
             )}
             {project.status === "failed" && latestJob?.error_message && (
               <Alert variant="destructive">
-                <AlertDescription>{latestJob.error_message}</AlertDescription>
+                <AlertDescription>
+                  {jobErrorLabel(d, latestJob.error_code) ?? latestJob.error_message}
+                  {jobErrorLabel(d, latestJob.error_code) && <span className="block text-xs opacity-80">{latestJob.error_message}</span>}
+                </AlertDescription>
               </Alert>
             )}
             {videos.map((v) => (
@@ -119,80 +127,80 @@ export default async function VideoProjectPage({ params }: { params: Promise<{ i
                   {downloadUrls[v.storage_path] && (
                     <Button asChild size="sm" variant="outline">
                       <a href={downloadUrls[v.storage_path]} download={exportFileName({ sku: project.products?.sku ?? null, shotType: "video", id: v.id, mimeType: v.mime_type })}>
-                        <Download /> Download MP4
+                        <Download /> {t.downloadMp4}
                       </a>
                     </Button>
                   )}
                 </div>
               </div>
             ))}
-            {!active && videos.length === 0 && project.status !== "failed" && <p className="text-sm text-muted-foreground">No video output.</p>}
+            {!active && videos.length === 0 && project.status !== "failed" && <p className="text-sm text-muted-foreground">{t.noOutput}</p>}
             {project.approval_status !== "approved" && videos.length > 0 && (
-              <p className="text-xs text-warning-foreground">Not approved for publication yet.</p>
+              <p className="text-xs text-warning-foreground">{t.notApproved}</p>
             )}
           </CardContent>
         </Card>
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Brief</CardTitle>
+              <CardTitle>{t.brief}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex gap-2">
                 {sources.map((s) => (
                   <Link key={s.id} href={`/results/${s.id}`}>
-                    <img src={s.thumbnail_path ? viewUrls[s.thumbnail_path] : undefined} alt="Source" className="h-24 rounded object-cover" />
+                    <img src={s.thumbnail_path ? viewUrls[s.thumbnail_path] : undefined} alt={t.source} className="h-24 rounded object-cover" />
                   </Link>
                 ))}
               </div>
               <dl className="grid grid-cols-[100px_1fr] gap-1">
-                <dt className="text-muted-foreground">Product</dt>
+                <dt className="text-muted-foreground">{t.product}</dt>
                 <dd>{project.products ? <Link className="underline" href={`/products/${project.products.id}`}>{project.products.sku}</Link> : "—"}</dd>
-                <dt className="text-muted-foreground">Prompt</dt>
+                <dt className="text-muted-foreground">{t.prompt}</dt>
                 <dd>{project.prompt}</dd>
                 {project.motion_instructions && (
                   <>
-                    <dt className="text-muted-foreground">Motion</dt>
+                    <dt className="text-muted-foreground">{t.motion}</dt>
                     <dd>{project.motion_instructions}</dd>
                   </>
                 )}
                 {project.brief && (
                   <>
-                    <dt className="text-muted-foreground">Brief</dt>
+                    <dt className="text-muted-foreground">{t.briefField}</dt>
                     <dd>{project.brief}</dd>
                   </>
                 )}
-                <dt className="text-muted-foreground">Spec</dt>
+                <dt className="text-muted-foreground">{t.spec}</dt>
                 <dd>
                   {project.duration_seconds}s · {project.aspect_ratio} · {project.resolution}
                 </dd>
-                <dt className="text-muted-foreground">Provider</dt>
+                <dt className="text-muted-foreground">{t.provider}</dt>
                 <dd>
                   {project.provider} · {project.model}
                 </dd>
-                <dt className="text-muted-foreground">Created</dt>
-                <dd>{formatDateTime(project.created_at)}</dd>
+                <dt className="text-muted-foreground">{t.created}</dt>
+                <dd>{formatDateTime(project.created_at, locale)}</dd>
               </dl>
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Cost</CardTitle>
+              <CardTitle>{t.cost}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-1 text-sm">
               {usage.length === 0 ? (
-                <p className="text-muted-foreground">Recorded when the video completes.</p>
+                <p className="text-muted-foreground">{t.costPending}</p>
               ) : (
                 usage.map((u) => (
                   <p key={u.id} className="flex justify-between">
-                    <span>{String((u.units as { seconds?: number }).seconds ?? "?")}s generated</span>
+                    <span>{fmt(t.secondsGenerated, { s: String((u.units as { seconds?: number }).seconds ?? "?") })}</span>
                     <span>
-                      {formatMoney(u.cost_amount == null ? null : Number(u.cost_amount))} <Badge variant="outline">{u.cost_source}</Badge>
+                      {formatMoney(u.cost_amount == null ? null : Number(u.cost_amount), "USD", 4, locale)} <Badge variant="outline">{d.enums.costSource[u.cost_source]}</Badge>
                     </span>
                   </p>
                 ))
               )}
-              <p className="pt-2 text-xs text-muted-foreground">Estimated from per-second pricing in configuration; the provider does not report charged amounts.</p>
+              <p className="pt-2 text-xs text-muted-foreground">{t.costNote}</p>
             </CardContent>
           </Card>
         </div>

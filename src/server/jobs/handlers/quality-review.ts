@@ -54,6 +54,7 @@ export const qualityReviewHandler: JobHandler = {
         shotType: result.shot_type,
         framing: style?.framing ?? null,
         background: style?.background ?? null,
+        language: typeof job.config.language === "string" ? job.config.language : undefined,
       }),
       images: [
         ...productImages.map((img, i) => ({ ...img, label: `original product reference (${productAssets[i]?.role})` })),

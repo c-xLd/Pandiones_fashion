@@ -22,9 +22,7 @@ export async function assertWithinBudget(client: SupabaseClient, organizationId:
   if (!org.budget_hard_limit || org.monthly_budget_usd == null) return;
   const spend = Number(check(await client.rpc("org_month_spend", { p_org: organizationId }), "Load spend") ?? 0);
   if (spend >= Number(org.monthly_budget_usd)) {
-    throw new UserFacingError(
-      `Monthly budget of $${Number(org.monthly_budget_usd).toFixed(2)} is exhausted (estimated spend $${spend.toFixed(2)}). An admin can raise it in Settings.`,
-    );
+    throw new UserFacingError("budgetExhausted", { budget: `$${Number(org.monthly_budget_usd).toFixed(2)}`, spend: `$${spend.toFixed(2)}` });
   }
 }
 

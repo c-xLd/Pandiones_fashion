@@ -12,6 +12,8 @@ import { ASSET_ROLES, type AssetRole } from "@/lib/domain/schemas";
 import { IMAGE_MIME_TYPES, parseBulkFileName, validateDeclaredImage } from "@/lib/domain/files";
 import { ensureProductsForSkus } from "@/server/actions/products";
 import { runPool, uploadFile } from "@/components/studio/upload-client";
+import { useI18n } from "@/lib/i18n/client";
+import { fmt } from "@/lib/i18n/config";
 
 type Row = {
   key: string;
@@ -25,6 +27,8 @@ type Row = {
 const MAX_FILES = 500;
 
 export function BulkImport() {
+  const { d } = useI18n();
+  const b = d.bulkImport;
   const inputRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [running, setRunning] = useState(false);
@@ -44,7 +48,7 @@ export function BulkImport() {
         sku: parsed?.sku ?? "",
         role: ((parsed?.role as AssetRole) ?? "front") as AssetRole,
         state: check.ok && parsed ? "pending" : "error",
-        message: !check.ok ? check.error : !parsed ? "Could not read a SKU from the file name; enter it manually." : undefined,
+        message: !check.ok ? fmt(d.errors[check.error], check.vars) : !parsed ? b.noSku : undefined,
       });
     }
     setRows((prev) => [...prev, ...next]);
@@ -74,12 +78,12 @@ export function BulkImport() {
     setProductIds((prev) => ({ ...prev, ...ensure.data }));
     await runPool(queue, 3, async (row) => {
       const productId = ensure.data[row.sku.trim()];
-      if (!productId) return update(row.key, { state: "error", message: "Product could not be created." });
+      if (!productId) return update(row.key, { state: "error", message: b.productNotCreated });
       try {
-        const res = await uploadFile("products", productId, row.file, row.role, (phase) => update(row.key, { state: phase }));
+        const res = await uploadFile("products", productId, row.file, row.role, (phase) => update(row.key, { state: phase }), d.uploader.uploadFailed);
         update(row.key, res.ok ? { state: "done", message: res.warning ?? undefined } : { state: "error", message: res.error });
       } catch (err) {
-        update(row.key, { state: "error", message: err instanceof Error ? err.message : "Upload failed" });
+        update(row.key, { state: "error", message: err instanceof Error ? err.message : d.uploader.genericFailed });
       }
     });
     setRunning(false);
@@ -91,7 +95,7 @@ export function BulkImport() {
       <CardContent className="space-y-4 pt-5">
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" onClick={() => inputRef.current?.click()} disabled={running}>
-            Choose images
+            {b.chooseImages}
           </Button>
           <input
             ref={inputRef}
@@ -99,29 +103,29 @@ export function BulkImport() {
             multiple
             accept={IMAGE_MIME_TYPES.join(",")}
             className="sr-only"
-            aria-label="Choose images to import"
+            aria-label={b.chooseLabel}
             onChange={(e) => {
               if (e.target.files) addFiles(e.target.files);
               e.target.value = "";
             }}
           />
           <span className="text-sm text-muted-foreground">
-            {total} files · {counts.skus} SKUs · {counts.done} uploaded · {counts.failed} with errors
+            {fmt(b.summary, { files: total, skus: counts.skus, done: counts.done, failed: counts.failed })}
           </span>
           <Button type="button" className="ml-auto" onClick={start} disabled={running || counts.pending === 0}>
-            {running ? <Loader2 className="animate-spin" /> : <Upload />} Import {counts.pending} files
+            {running ? <Loader2 className="animate-spin" /> : <Upload />} {fmt(b.importCount, { n: counts.pending })}
           </Button>
         </div>
-        {running && <Progress value={total ? ((counts.done + counts.failed) / total) * 100 : 0} label="Import progress" />}
+        {running && <Progress value={total ? ((counts.done + counts.failed) / total) * 100 : 0} label={b.progress} />}
         {globalError && <p className="text-sm text-destructive">{globalError}</p>}
         {rows.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>File</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{b.columns.file}</TableHead>
+                <TableHead>{b.columns.sku}</TableHead>
+                <TableHead>{b.columns.role}</TableHead>
+                <TableHead>{b.columns.status}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -132,7 +136,7 @@ export function BulkImport() {
                   </TableCell>
                   <TableCell>
                     <Input
-                      aria-label={`SKU for ${r.file.name}`}
+                      aria-label={fmt(b.skuFor, { name: r.file.name })}
                       className="h-8"
                       value={r.sku}
                       disabled={running || r.state === "done"}
@@ -145,7 +149,7 @@ export function BulkImport() {
                   </TableCell>
                   <TableCell>
                     <NativeSelect
-                      aria-label={`Role for ${r.file.name}`}
+                      aria-label={fmt(d.uploader.roleFor, { name: r.file.name })}
                       className="h-8"
                       value={r.role}
                       disabled={running || r.state === "done"}
@@ -153,7 +157,7 @@ export function BulkImport() {
                     >
                       {ASSET_ROLES.map((role) => (
                         <option key={role} value={role}>
-                          {role}
+                          {d.enums.assetRole[role]}
                         </option>
                       ))}
                     </NativeSelect>
@@ -163,10 +167,10 @@ export function BulkImport() {
                       {r.state === "done" && <CheckCircle2 className="h-4 w-4 text-success" />}
                       {r.state === "error" && <XCircle className="h-4 w-4 text-destructive" />}
                       {(r.state === "uploading" || r.state === "processing") && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {r.state}
+                      {b.states[r.state]}
                       {r.state === "done" && productIds[r.sku.trim()] && (
                         <Link className="underline" href={`/products/${productIds[r.sku.trim()]}`}>
-                          open
+                          {d.common.open}
                         </Link>
                       )}
                     </span>

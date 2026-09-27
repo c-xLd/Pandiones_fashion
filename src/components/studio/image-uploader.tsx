@@ -9,6 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { ASSET_ROLES, type AssetRole } from "@/lib/domain/schemas";
 import { IMAGE_MIME_TYPES, parseBulkFileName, validateDeclaredImage } from "@/lib/domain/files";
 import { runPool, uploadFile } from "./upload-client";
+import { useI18n } from "@/lib/i18n/client";
+import { fmt } from "@/lib/i18n/config";
 
 type ItemState = "pending" | "uploading" | "processing" | "done" | "error";
 
@@ -31,6 +33,7 @@ function guessRole(name: string): AssetRole {
 
 export function ImageUploader({ target, entityId }: { target: "products" | "models"; entityId: string }) {
   const router = useRouter();
+  const { d } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [running, setRunning] = useState(false);
@@ -47,22 +50,22 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
         file,
         role: guessRole(file.name),
         state: check.ok ? "pending" : "error",
-        message: check.ok ? undefined : check.error,
+        message: check.ok ? undefined : fmt(d.errors[check.error], check.vars),
       };
     });
     setItems((prev) => [...prev, ...next]);
-  }, []);
+  }, [d]);
 
   async function start() {
     setRunning(true);
     const queue = items.filter((i) => i.state === "pending");
     await runPool(queue, CONCURRENCY, async (item) => {
       try {
-        const res = await uploadFile(target, entityId, item.file, item.role, (phase) => update(item.key, { state: phase }));
+        const res = await uploadFile(target, entityId, item.file, item.role, (phase) => update(item.key, { state: phase }), d.uploader.uploadFailed);
         if (res.ok) update(item.key, { state: "done", warning: res.warning ?? undefined });
         else update(item.key, { state: "error", message: res.error });
       } catch (err) {
-        update(item.key, { state: "error", message: err instanceof Error ? err.message : "Upload failed" });
+        update(item.key, { state: "error", message: err instanceof Error ? err.message : d.uploader.genericFailed });
       }
     });
     setRunning(false);
@@ -88,9 +91,9 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
         className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center transition-colors ${dragging ? "border-primary bg-accent" : ""}`}
       >
         <Upload className="mb-2 h-6 w-6 text-muted-foreground" aria-hidden />
-        <p className="text-sm">Drag images here or</p>
+        <p className="text-sm">{d.uploader.dragHere}</p>
         <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => inputRef.current?.click()}>
-          Choose files
+          {d.uploader.choose}
         </Button>
         <input
           ref={inputRef}
@@ -98,18 +101,18 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
           accept={IMAGE_MIME_TYPES.join(",")}
           multiple
           className="sr-only"
-          aria-label="Choose image files"
+          aria-label={d.uploader.chooseLabel}
           onChange={(e) => {
             if (e.target.files) addFiles(e.target.files);
             e.target.value = "";
           }}
         />
-        <p className="mt-2 text-xs text-muted-foreground">JPEG, PNG or WebP · up to 25 MB · min 256 px · originals are preserved</p>
+        <p className="mt-2 text-xs text-muted-foreground">{d.uploader.hint}</p>
       </div>
 
       {items.length > 0 && (
         <div className="space-y-2">
-          {running && <Progress value={(finished / items.length) * 100} label="Upload progress" />}
+          {running && <Progress value={(finished / items.length) * 100} label={d.uploader.progress} />}
           <ul className="divide-y rounded-md border text-sm">
             {items.map((item) => (
               <li key={item.key} className="flex flex-wrap items-center gap-3 p-2">
@@ -121,7 +124,7 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
                 </span>
                 {target === "products" && (
                   <NativeSelect
-                    aria-label={`Role for ${item.file.name}`}
+                    aria-label={fmt(d.uploader.roleFor, { name: item.file.name })}
                     className="h-8 w-28"
                     value={item.role}
                     disabled={item.state !== "pending"}
@@ -129,7 +132,7 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
                   >
                     {ASSET_ROLES.map((r) => (
                       <option key={r} value={r}>
-                        {r}
+                        {d.enums.assetRole[r]}
                       </option>
                     ))}
                   </NativeSelect>
@@ -142,7 +145,7 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
                     disabled={running}
                     onClick={() => setItems((prev) => prev.filter((i) => i.key !== item.key))}
                   >
-                    Remove
+                    {d.common.remove}
                   </Button>
                 ) : null}
               </li>
@@ -151,7 +154,7 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
           <div className="flex gap-2">
             <Button type="button" onClick={start} disabled={running || pending === 0}>
               {running ? <Loader2 className="animate-spin" /> : <Upload />}
-              Upload {pending > 0 ? `${pending} file${pending > 1 ? "s" : ""}` : ""}
+              {pending > 0 ? fmt(d.uploader.uploadCount, { n: pending }) : d.uploader.upload}
             </Button>
             <Button
               type="button"
@@ -159,7 +162,7 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
               disabled={running}
               onClick={() => setItems((prev) => prev.filter((i) => i.state === "pending"))}
             >
-              Clear finished
+              {d.uploader.clearFinished}
             </Button>
           </div>
         </div>
@@ -169,11 +172,12 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
 }
 
 function StateIcon({ state }: { state: ItemState }) {
+  const { d } = useI18n();
   switch (state) {
     case "done":
-      return <CheckCircle2 className="h-4 w-4 text-success" aria-label="Uploaded" />;
+      return <CheckCircle2 className="h-4 w-4 text-success" aria-label={d.uploader.uploaded} />;
     case "error":
-      return <XCircle className="h-4 w-4 text-destructive" aria-label="Failed" />;
+      return <XCircle className="h-4 w-4 text-destructive" aria-label={d.uploader.failed} />;
     case "uploading":
     case "processing":
       return <Loader2 className="h-4 w-4 animate-spin text-info" aria-label={state} />;

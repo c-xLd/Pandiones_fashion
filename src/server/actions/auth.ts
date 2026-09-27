@@ -1,5 +1,6 @@
 "use server";
 
+import { getI18n } from "@/lib/i18n/server";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -13,8 +14,8 @@ import { audit } from "../audit";
 export type FormState = { ok: boolean; error?: string; message?: string } | null;
 
 const credentialsSchema = z.object({
-  email: z.email("Enter a valid email address").max(254),
-  password: z.string().min(8, "Password must be at least 8 characters").max(128),
+  email: z.email("emailInvalid").max(254),
+  password: z.string().min(8, "passwordLength").max(128),
 });
 
 async function clientIp(): Promise<string> {
@@ -36,7 +37,7 @@ export async function signIn(_prev: FormState, formData: FormData): Promise<Form
     await enforceRateLimit("auth", `${await clientIp()}:${input.email.toLowerCase()}`);
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.signInWithPassword(input);
-    if (error) return { ok: false, error: "Invalid email or password, or the email is not confirmed yet." };
+    if (error) return { ok: false, error: (await getI18n()).d.auth.invalidCredentials };
   } catch (error) {
     return toActionError(error, "signIn");
   }
@@ -56,7 +57,7 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
     });
     if (error) return { ok: false, error: error.message };
     if (!data.session) {
-      return { ok: true, message: "Check your inbox to confirm your email address, then sign in." };
+      return { ok: true, message: (await getI18n()).d.auth.checkInbox };
     }
   } catch (error) {
     return toActionError(error, "signUp");
@@ -72,7 +73,7 @@ export async function signOut(): Promise<void> {
 }
 
 const orgSchema = z.object({
-  name: z.string().trim().min(2, "Name must be at least 2 characters").max(120),
+  name: z.string().trim().min(2, "orgNameLength").max(120),
 });
 
 export async function createOrganization(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -85,7 +86,7 @@ export async function createOrganization(_prev: FormState, formData: FormData): 
     const base = slugify(name) || "org";
     const slug = `${base.slice(0, 50)}-${crypto.randomUUID().slice(0, 6)}`;
     const { data, error } = await ctx.supabase.rpc("create_organization", { p_name: name, p_slug: slug });
-    if (error || !data) return { ok: false, error: "Could not create the organization." };
+    if (error || !data) return { ok: false, error: (await getI18n()).d.onboarding.createFailed };
     orgId = data as string;
     await audit({ organizationId: orgId, actorId: ctx.userId, action: "organization.created", entityType: "organization", entityId: orgId });
   } catch (error) {

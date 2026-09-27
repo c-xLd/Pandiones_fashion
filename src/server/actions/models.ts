@@ -1,5 +1,6 @@
 "use server";
 
+import { getI18n } from "@/lib/i18n/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -80,11 +81,11 @@ export async function updateModelProfile(modelId: string, _prev: ModelFormState,
         .select("id"),
       "Update model profile",
     ) as { id: string }[];
-    if (!rows.length) throw new UserFacingError("Model profile not found.");
+    if (!rows.length) throw new UserFacingError("modelNotFound");
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "model_profile.updated", entityType: "model_profile", entityId: modelId });
     revalidatePath(`/models/${modelId}`);
     revalidatePath("/models");
-    return { ok: true, message: "Model profile saved." };
+    return { ok: true, message: (await getI18n()).d.models.saved };
   } catch (error) {
     return toActionError(error, "updateModelProfile");
   }
@@ -101,7 +102,7 @@ export async function finalizeModelAsset(
     const org = ctx.org.organizationId;
     assertUploadPath(data.path, org, "models", data.modelId);
     const bytes = await downloadObject(data.path).catch(() => {
-      throw new UserFacingError("Upload not found. Please upload the file again.");
+      throw new UserFacingError("uploadNotFound");
     });
     let processed;
     try {
@@ -116,7 +117,7 @@ export async function finalizeModelAsset(
     ) as { id: string }[];
     if (existing.length) {
       await removeObjects([data.path]);
-      throw new UserFacingError("This exact image is already a reference for this model.");
+      throw new UserFacingError("duplicateModelRef");
     }
     const thumbPath = paths.thumbnailFor(data.path);
     await uploadObject(thumbPath, processed.thumbnail, "image/webp");
@@ -164,7 +165,7 @@ export async function deleteModelAsset(assetId: string): Promise<ActionResult> {
       "Delete model asset",
     ) as { model_profile_id: string; storage_path: string; thumbnail_path: string | null }[];
     const row = rows[0];
-    if (!row) throw new UserFacingError("Image not found.");
+    if (!row) throw new UserFacingError("imageNotFound");
     await removeObjects([row.storage_path, row.thumbnail_path ?? ""]);
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "model_asset.deleted", entityType: "model_profile_asset", entityId: assetId });
     revalidatePath(`/models/${row.model_profile_id}`);
@@ -206,8 +207,8 @@ export async function requestModelPortrait(input: z.input<typeof portraitSchema>
       await ctx.supabase.from("model_profiles").select("id, status").eq("id", data.modelId).eq("organization_id", ctx.org.organizationId).maybeSingle(),
       "Load model",
     ) as { id: string; status: string } | null;
-    if (!profile) throw new UserFacingError("Model profile not found.");
-    if (profile.status === "retired") throw new UserFacingError("Retired models cannot be used for new generations.");
+    if (!profile) throw new UserFacingError("modelNotFound");
+    if (profile.status === "retired") throw new UserFacingError("modelRetired");
     const { jobs } = await enqueueJobs(ctx, [
       {
         jobType: "model_portrait",
@@ -240,9 +241,9 @@ export async function promoteResultToModelReference(resultId: string): Promise<A
       await ctx.supabase.from("generation_results").select("*").eq("id", z.uuid().parse(resultId)).eq("organization_id", org).maybeSingle(),
       "Load result",
     ) as ResultRow | null;
-    if (!result || result.kind !== "image") throw new UserFacingError("Image not found.");
-    if (!result.model_profile_id) throw new UserFacingError("This image is not linked to a model profile.");
-    if (result.review_status !== "approved") throw new UserFacingError("Approve the image before adding it as a model reference.");
+    if (!result || result.kind !== "image") throw new UserFacingError("imageNotFound");
+    if (!result.model_profile_id) throw new UserFacingError("notLinkedToModel");
+    if (result.review_status !== "approved") throw new UserFacingError("approveBeforePromote");
 
     const bytes = await downloadObject(result.storage_path);
     const processed = await processImage(bytes, { enforceMinSize: false });

@@ -5,6 +5,9 @@ import { Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/studio/status-badge";
+import { useI18n } from "@/lib/i18n/client";
+import { fmt } from "@/lib/i18n/config";
+import { shotLabel } from "@/lib/i18n/labels";
 
 export interface LibraryItem {
   id: string;
@@ -19,6 +22,8 @@ export interface LibraryItem {
 }
 
 export function LibraryGrid({ items }: { items: LibraryItem[] }) {
+  const { d } = useI18n();
+  const t = d.library;
   const [selected, setSelected] = useState<string[]>([]);
   const [approvedOnly, setApprovedOnly] = useState(true);
   const [pending, start] = useTransition();
@@ -34,7 +39,7 @@ export function LibraryGrid({ items }: { items: LibraryItem[] }) {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? `Export failed (${res.status})`);
+        setError(body?.error ?? fmt(t.exportFailed, { status: res.status }));
         return;
       }
       const blob = await res.blob();
@@ -54,18 +59,18 @@ export function LibraryGrid({ items }: { items: LibraryItem[] }) {
           <Checkbox
             checked={selected.length > 0 && selected.length === items.length}
             onChange={(e) => setSelected(e.target.checked ? items.map((i) => i.id).slice(0, 100) : [])}
-            aria-label="Select all on page"
+            aria-label={t.selectAllPage}
           />
-          {selected.length} selected
+          {fmt(d.common.selected, { n: selected.length })}
         </label>
         <label className="flex items-center gap-2">
           <Checkbox checked={approvedOnly} onChange={(e) => setApprovedOnly(e.target.checked)} />
-          Approved items only
+          {t.approvedOnly}
         </label>
         <Button size="sm" onClick={exportZip} disabled={!selected.length || pending}>
-          {pending ? <Loader2 className="animate-spin" /> : <Download />} Export ZIP
+          {pending ? <Loader2 className="animate-spin" /> : <Download />} {t.exportZip}
         </Button>
-        <span className="text-xs text-muted-foreground">Max 100 files per export. Includes manifest.csv and manifest.json.</span>
+        <span className="text-xs text-muted-foreground">{t.exportHint}</span>
         {error && <span className="text-destructive">{error}</span>}
       </div>
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
@@ -76,7 +81,7 @@ export function LibraryGrid({ items }: { items: LibraryItem[] }) {
                 className="absolute left-2 top-2 z-10 h-5 w-5 bg-background"
                 checked={selected.includes(item.id)}
                 onChange={(e) => setSelected((s) => (e.target.checked ? (s.length < 100 ? [...s, item.id] : s) : s.filter((x) => x !== item.id)))}
-                aria-label="Select for export"
+                aria-label={t.selectForExport}
               />
               <Link href={item.href}>
                 {item.kind === "video" ? (
@@ -90,7 +95,7 @@ export function LibraryGrid({ items }: { items: LibraryItem[] }) {
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="font-mono">{item.sku ?? "—"}</span>
-              <span className="text-muted-foreground">{item.kind === "video" ? "video" : item.shotType}</span>
+              <span className="text-muted-foreground">{item.kind === "video" ? t.video : shotLabel(d, item.shotType)}</span>
             </div>
             <div className="flex items-center justify-between">
               <StatusBadge status={item.reviewStatus} />

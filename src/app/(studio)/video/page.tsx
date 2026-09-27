@@ -4,6 +4,8 @@ import { requirePageContext, roleAtLeast } from "@/server/context";
 import { isVideoEnabled } from "@/lib/providers/registry";
 import { formatDateTime } from "@/lib/utils";
 import type { VideoProjectRow } from "@/lib/types";
+import { getI18n } from "@/lib/i18n/server";
+import { pageMetadata } from "@/lib/i18n/metadata";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,10 +14,12 @@ import { EmptyState } from "@/components/studio/empty-state";
 import { StatusBadge } from "@/components/studio/status-badge";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 
-export const metadata = { title: "Video studio" };
+export const generateMetadata = pageMetadata((d) => d.video.metaTitle);
 
 export default async function VideoPage() {
   const ctx = await requirePageContext();
+  const { locale, d } = await getI18n();
+  const t = d.video;
   const { data, error } = await ctx.supabase
     .from("video_projects")
     .select("*, products(sku)")
@@ -31,10 +35,10 @@ export default async function VideoPage() {
   return (
     <>
       <PageHeader
-        title="Video studio"
+        title={t.title}
         description={
           <span className="flex flex-wrap items-center gap-3">
-            Product videos from one approved image, or advertising videos from selected images and a brief.
+            {t.description}
             <AutoRefresh active={active} intervalMs={10000} />
           </span>
         }
@@ -43,7 +47,7 @@ export default async function VideoPage() {
           enabled && (
             <Button asChild>
               <Link href="/video/new">
-                <Plus /> New video
+                <Plus /> {t.newVideo}
               </Link>
             </Button>
           )
@@ -51,27 +55,24 @@ export default async function VideoPage() {
       />
       {!enabled && (
         <Alert variant="warning" className="mb-4">
-          <AlertTitle>Video generation is not configured</AlertTitle>
-          <AlertDescription>
-            Set <code>VIDEO_PROVIDER=gemini-veo</code>, <code>VIDEO_MODEL</code> (verify with <code>npm run providers:models</code>) and{" "}
-            <code>GEMINI_API_KEY</code> on the server. Review the provider&apos;s current pricing and commercial terms first — see docs/API_PROVIDERS.md.
-          </AlertDescription>
+          <AlertTitle>{t.disabledTitle}</AlertTitle>
+          <AlertDescription>{t.disabledBody}</AlertDescription>
         </Alert>
       )}
       {projects.length === 0 ? (
-        <EmptyState icon={Clapperboard} title="No video projects yet" description="Approve a generated image in Review, then choose “Make video”." />
+        <EmptyState icon={Clapperboard} title={t.emptyTitle} description={t.emptyBody} />
       ) : (
         <div className="rounded-xl border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Approval</TableHead>
-                <TableHead>Spec</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>{t.columns.name}</TableHead>
+                <TableHead>{t.columns.type}</TableHead>
+                <TableHead>{t.columns.product}</TableHead>
+                <TableHead>{t.columns.status}</TableHead>
+                <TableHead>{t.columns.approval}</TableHead>
+                <TableHead>{t.columns.spec}</TableHead>
+                <TableHead>{t.columns.created}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -82,7 +83,7 @@ export default async function VideoPage() {
                       {p.name}
                     </Link>
                   </TableCell>
-                  <TableCell>{p.kind}</TableCell>
+                  <TableCell>{d.enums.videoKind[p.kind]}</TableCell>
                   <TableCell className="font-mono text-xs">{p.products?.sku ?? "—"}</TableCell>
                   <TableCell>
                     <StatusBadge status={p.status} />
@@ -93,7 +94,7 @@ export default async function VideoPage() {
                   <TableCell className="text-xs">
                     {p.duration_seconds}s · {p.aspect_ratio} · {p.resolution}
                   </TableCell>
-                  <TableCell className="text-xs">{formatDateTime(p.created_at)}</TableCell>
+                  <TableCell className="text-xs">{formatDateTime(p.created_at, locale)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
