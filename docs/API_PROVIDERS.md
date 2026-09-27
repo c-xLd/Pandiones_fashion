@@ -61,6 +61,11 @@ live call was made during development.
 - Implementation: `src/lib/providers/cloudflare/flux.ts` (references are EXIF-rotated and downscaled to 1024 px JPEG), sizing,
   cost and error mapping in `src/lib/domain/flux.ts` (exhausted daily allocation → permanent `provider_daily_quota`; 429/5xx
   retried; NSFW refusals → `safety_filtered`). FLUX gets a concise natural-language prompt (`buildConciseProductShotPrompt`).
+- Licences (verified 2026-09-27 via Black Forest Labs / Hugging Face model cards): FLUX.2 [klein] **4B is Apache 2.0**
+  (commercial use allowed); **[klein] 9B is under the FLUX Non-Commercial License**. The composer's "High quality" engine
+  selects 9B per session (`engineModel`, allow-listed in `CLOUDFLARE_ALLOWED_MODELS`) and labels the licence; default stays 4B.
+- Identity: when a model reference is used, the worker also sends a heuristic face close-up (upper frame, sharp "attention"
+  crop — not face detection), within the 4-image limit (garment refs are reduced to 2 in that case).
 - Product analysis and QC still use Gemini (`GEMINI_API_KEY`, free tier works with `GEMINI_ANALYSIS_MODEL=gemini-3.8-flash`).
 
 ## Gemini — analysis and QC

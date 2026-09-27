@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { MAX_SESSION_LOCATIONS, MAX_SESSION_SHOTS, SESSION_LOCATIONS } from "./photo-session";
+import { GARMENT_TYPES } from "./outfit";
+
+export const IMAGE_ENGINES = ["auto", "standard", "high"] as const;
+export type ImageEngine = (typeof IMAGE_ENGINES)[number];
 
 // ---------------------------------------------------------------------------
 // Shared enums
@@ -140,6 +144,10 @@ export const photoSessionRequestSchema = z.object({
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
   /** 2K is generated natively; 4K is the 2K output upscaled when the model cannot produce 4K. */
   imageSize: z.enum(["2K", "4K"]).default("2K"),
+  /** What the uploaded product is; "auto" infers it from the category/title. */
+  garmentType: z.enum(["auto", ...GARMENT_TYPES]).default("auto"),
+  /** Generation engine: auto/standard = the configured model; high = higher-quality model when available. */
+  engine: z.enum(IMAGE_ENGINES).default("auto"),
   instructions: z.string().trim().max(1500).default(""),
   idempotencyKey: z.string().min(8).max(100),
 });
@@ -160,6 +168,8 @@ export const imageJobConfigSchema = z.object({
   modelPersona: z.string().max(600).nullable().default(null),
   /** Session location id, for display and filtering. */
   location: z.string().max(40).nullable().default(null),
+  /** Complementary outfit pieces, identical across a session (see outfit.ts). */
+  styling: z.string().max(600).nullable().default(null),
 });
 export type ImageJobConfig = z.infer<typeof imageJobConfigSchema>;
 

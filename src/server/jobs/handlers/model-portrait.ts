@@ -20,7 +20,7 @@ export const modelPortraitHandler: JobHandler = {
     const images = await downloadReferences(ctx.admin, assets.map((a) => a.storage_path));
     const prompt = buildModelPortraitPrompt(modelContext(profile), config.instructions, images.length > 0);
 
-    const provider = getImageProvider();
+    const provider = getImageProvider(job.model);
     let result;
     try {
       result = await provider.generateImage({

@@ -151,6 +151,7 @@ export function buildProductShotPrompt(input: {
   refs: ReferenceImageLabel[];
   regenerationNote?: string | null;
   modelPersona?: string | null;
+  styling?: string | null;
 }): string {
   const sections = [
     "Create one photorealistic fashion e-commerce photograph.",
@@ -158,6 +159,9 @@ export function buildProductShotPrompt(input: {
     buildModelDirection(input.model, input.refs, input.modelPersona),
     buildCreativeDirection(input.style),
   ];
+  if (input.styling) {
+    sections.push(`OUTFIT (identical in every photo of this shoot; must not cover or change the main garment):\n- ${input.styling}`);
+  }
   if (input.regenerationNote) {
     sections.push(`REVIEWER FEEDBACK TO ADDRESS:\n- ${input.regenerationNote}`);
   }
@@ -177,6 +181,7 @@ export function buildConciseProductShotPrompt(input: {
   refs: ReferenceImageLabel[];
   regenerationNote?: string | null;
   modelPersona?: string | null;
+  styling?: string | null;
 }): string {
   const { product, model, style, refs } = input;
   const ref = (r: ReferenceImageLabel) => `image ${r.index - 1}`;
@@ -189,12 +194,14 @@ export function buildConciseProductShotPrompt(input: {
       .join(", ")}.`,
   );
   parts.push(
-    "Reproduce the garment exactly: same colours, fabric, pattern, lace, straps, seams, closures and trims, same silhouette; do not redesign it, add or remove elements, or invent unseen details.",
+    "Reproduce the garment exactly as photographed: identical colours, fabric texture, pattern and print placement, lace, straps, seams, buttons, closures, trims, cut and length. Do not redesign, simplify, recolour or restyle it, and do not add pockets, logos, text, embellishments or extra layers to it.",
   );
   const facts = [product.category, product.color].filter(Boolean).join(", ");
   parts.push(`Product: ${product.title}${facts ? ` (${facts})` : ""}.`);
   if (modelRefs.length) {
-    parts.push(`The model has the same face, hair and identity as the person in ${modelRefs.map(ref).join(" and ")}.`);
+    parts.push(
+      `The model is exactly the woman in ${modelRefs.map(ref).join(" and ")}: keep her face unchanged (same face shape, eyes, eyebrows, nose, lips, skin tone and complexion) and the same hair colour and style; do not beautify, age or alter her features.`,
+    );
   } else if (!model && input.modelPersona) {
     parts.push(`The model is a fictional person: ${input.modelPersona}. Do not resemble any real or famous person.`);
   }
@@ -210,6 +217,11 @@ export function buildConciseProductShotPrompt(input: {
   if (style.cameraAngle) parts.push(`Camera: ${style.cameraAngle}.`);
   if (style.background) parts.push(`Setting: ${style.background}.`);
   if (style.lighting) parts.push(`Lighting: ${style.lighting}.`);
+  if (input.styling) {
+    parts.push(
+      `Complete the outfit with exactly these items, identical in every photo of this shoot: ${input.styling}. They must not cover, overlap or change the main garment.`,
+    );
+  }
   if (style.creativeInstructions) parts.push(style.creativeInstructions);
   if (input.regenerationNote) parts.push(`Fix: ${input.regenerationNote}`);
   parts.push(REALISM);

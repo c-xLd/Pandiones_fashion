@@ -39,6 +39,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   const db = ctx.supabase;
   const org = ctx.org.organizationId;
   const canEdit = roleAtLeast(ctx.org.role, "editor");
+  const canDelete = roleAtLeast(ctx.org.role, "admin");
 
   let results = db.from("generation_results").select("*, products(sku)").eq("organization_id", org).order("created_at", { ascending: false }).limit(GALLERY_LIMIT);
   if (kind) results = results.eq("kind", kind);
@@ -245,6 +246,8 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                 return (
                   <MediaTile
                     key={r.id}
+                    resultId={r.id}
+                    canDelete={canDelete}
                     href={r.kind === "video" && r.video_project_id ? `/video/${r.video_project_id}` : `/results/${r.id}`}
                     kind={r.kind}
                     url={signed(r.kind === "video" ? r.storage_path : r.thumbnail_path)}

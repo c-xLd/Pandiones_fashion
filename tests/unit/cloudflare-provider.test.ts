@@ -92,7 +92,7 @@ describe("buildConciseProductShotPrompt", () => {
       ],
     });
     expect(text).toContain("image 0 (front view), image 1 (back view)");
-    expect(text).toContain("same face, hair and identity as the person in image 2");
+    expect(text).toContain("The model is exactly the woman in image 2: keep her face unchanged");
     expect(text).toContain("21+");
     expect(text).toContain("non-explicit");
     expect(text).toContain("Setting: city street.");

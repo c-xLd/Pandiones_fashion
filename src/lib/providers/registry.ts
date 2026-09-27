@@ -1,5 +1,5 @@
 import "server-only";
-import { ConfigError, cloudflareConfig, geminiConfig, imageProviderName, videoConfig } from "@/lib/env";
+import { CLOUDFLARE_ALLOWED_MODELS, ConfigError, cloudflareConfig, geminiConfig, imageProviderName, videoConfig } from "@/lib/env";
 import { GeminiImageProvider, GeminiVisionProvider } from "./gemini/client";
 import { CloudflareFluxImageProvider } from "./cloudflare/flux";
 import { GeminiVeoProvider } from "./video/gemini-veo";
@@ -20,9 +20,18 @@ export function setProviderOverrides(next: Overrides): void {
   overrides = next;
 }
 
-export function getImageProvider(): ImageGenerationProvider {
+/**
+ * @param requestedModel model stored on the job (e.g. a higher-quality engine
+ *   chosen by the user); honoured only when it is an allowed model of the
+ *   configured provider.
+ */
+export function getImageProvider(requestedModel?: string): ImageGenerationProvider {
   if (overrides.image) return overrides.image;
-  if (imageProviderName() === "cloudflare") return new CloudflareFluxImageProvider(cloudflareConfig());
+  if (imageProviderName() === "cloudflare") {
+    const cfg = cloudflareConfig();
+    const model = requestedModel && CLOUDFLARE_ALLOWED_MODELS.includes(requestedModel) ? requestedModel : cfg.imageModel;
+    return new CloudflareFluxImageProvider({ ...cfg, imageModel: model });
+  }
   const cfg = geminiConfig();
   if (!cfg.imageModel) throw new ConfigError("GEMINI_IMAGE_MODEL is not set. Set it to an image-capable Gemini model ID verified with `npm run providers:models`.");
   return new GeminiImageProvider(cfg);

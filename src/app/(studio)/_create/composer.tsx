@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ArrowUp, Check, ChevronDown, Dices, ImagePlus, Layers, Loader2, MapPin, Ratio, RefreshCw, Shirt, Sparkles, Upload, UserRound, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Cpu, Dices, ImagePlus, Layers, Loader2, MapPin, Ratio, RefreshCw, Shirt, Sparkles, Tags, Upload, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { IMAGE_ASPECT_RATIOS, type ImageAspectRatio } from "@/lib/domain/schemas";
+import { IMAGE_ASPECT_RATIOS, IMAGE_ENGINES, type ImageAspectRatio, type ImageEngine } from "@/lib/domain/schemas";
+import { GARMENT_TYPES, type GarmentType } from "@/lib/domain/outfit";
 import { SESSION_LOCATIONS, SESSION_SHOT_COUNTS, MAX_SESSION_LOCATIONS, type SessionLocation } from "@/lib/domain/photo-session";
 import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
 import { createPhotoSession } from "@/server/actions/generation";
@@ -59,6 +60,8 @@ export function Composer({ products, models, disabledReason, initialProductId, i
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("3:4");
   const [prompt, setPrompt] = useState("");
   const [quality, setQuality] = useState<"2K" | "4K">("2K");
+  const [garmentType, setGarmentType] = useState<"auto" | GarmentType>("auto");
+  const [engine, setEngine] = useState<ImageEngine>("auto");
   // Casting: a new random model whose portrait is being generated / previewed.
   const [casting, setCasting] = useState<{ modelId: string; startedAt: number; dismissed: boolean } | null>(null);
   const [castBusy, setCastBusy] = useState(false);
@@ -196,6 +199,8 @@ export function Composer({ products, models, disabledReason, initialProductId, i
         count,
         aspectRatio,
         imageSize: quality,
+        garmentType,
+        engine,
         instructions: prompt.trim(),
         idempotencyKey,
       });
@@ -293,6 +298,18 @@ export function Composer({ products, models, disabledReason, initialProductId, i
               ))}
             </Chooser>
 
+            <Chooser icon={<Tags />} label={garmentType === "auto" ? t.garmentTypeAuto : t.garmentTypes[garmentType]} ariaLabel={t.garmentType} compact>
+              {(["auto", ...GARMENT_TYPES] as const).map((g) => (
+                <Menu.Item key={g} className={itemClass} onSelect={() => setGarmentType(g)}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block">{g === "auto" ? t.garmentTypeAuto : t.garmentTypes[g]}</span>
+                    {g === "auto" && <span className="block text-xs text-muted-foreground">{t.garmentTypeAutoHint}</span>}
+                  </span>
+                  {g === garmentType && <Check className="h-4 w-4" />}
+                </Menu.Item>
+              ))}
+            </Chooser>
+
             <Chooser
               icon={uploading === "model" || castWaiting ? <Loader2 className="animate-spin" /> : model ? <UserRound /> : <Dices />}
               label={uploading === "model" ? t.uploading : castWaiting && modelId === casting?.modelId ? t.casting : model ? model.name : t.randomModel}
@@ -379,7 +396,7 @@ export function Composer({ products, models, disabledReason, initialProductId, i
             className="mt-2 block max-h-40 min-h-[3.25rem] w-full resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground/80"
           />
 
-          <div className="mt-1 flex items-center gap-1.5">
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <Chooser icon={<Layers />} label={fmt(t.photosValue, { n: count })} ariaLabel={t.photos} compact>
               {SESSION_SHOT_COUNTS.map((n) => (
                 <Menu.Item key={n} className={itemClass} onSelect={() => setCount(n)}>
@@ -404,6 +421,17 @@ export function Composer({ products, models, disabledReason, initialProductId, i
                     <span className="block text-xs text-muted-foreground">{q === "2K" ? t.quality2kHint : t.quality4kHint}</span>
                   </span>
                   {q === quality && <Check className="h-4 w-4" />}
+                </Menu.Item>
+              ))}
+            </Chooser>
+            <Chooser icon={<Cpu />} label={t.engines[engine]} ariaLabel={t.engine} compact>
+              {IMAGE_ENGINES.map((e) => (
+                <Menu.Item key={e} className={itemClass} onSelect={() => setEngine(e)}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block">{t.engines[e]}</span>
+                    <span className="block text-xs text-muted-foreground">{t.engineHints[e]}</span>
+                  </span>
+                  {e === engine && <Check className="h-4 w-4" />}
                 </Menu.Item>
               ))}
             </Chooser>

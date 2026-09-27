@@ -132,6 +132,17 @@ export function imageGenerationConfig(): ImageGenerationConfig {
   return { provider: "gemini", model: g.imageModel, maxReferenceImages: g.maxReferenceImages };
 }
 
+/** Higher-quality FLUX.2 model (FLUX Non-Commercial License; ~10x the neurons of klein 4B). */
+export const CLOUDFLARE_HIGH_QUALITY_MODEL = "@cf/black-forest-labs/flux-2-klein-9b";
+/** Models a job may request explicitly (anything else falls back to the configured model). */
+export const CLOUDFLARE_ALLOWED_MODELS = [DEFAULT_CLOUDFLARE_IMAGE_MODEL, CLOUDFLARE_HIGH_QUALITY_MODEL];
+
+/** Model ID for a requested engine; "high" only changes the model on Cloudflare. */
+export function engineModel(cfg: ImageGenerationConfig, engine: "auto" | "standard" | "high"): string {
+  if (engine === "high" && cfg.provider === "cloudflare") return CLOUDFLARE_HIGH_QUALITY_MODEL;
+  return cfg.model;
+}
+
 export function isImageGenerationConfigured(): boolean {
   try {
     imageGenerationConfig();

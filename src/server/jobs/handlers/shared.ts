@@ -222,3 +222,29 @@ export async function saveCastingReference(admin: SupabaseClient, job: JobRow, m
   if (error) throw new Error(`Saving casting reference failed: ${error.message}`);
   await admin.from("model_profiles").update({ status: "active" }).eq("id", modelId).eq("organization_id", job.organization_id).eq("status", "draft");
 }
+
+/**
+ * Heuristic face close-up from a model photo: the upper part of the frame,
+ * square-cropped around the most salient region (sharp's "attention"
+ * strategy favours skin tones and detail). Not face detection; it helps the
+ * model keep identity when the reference is a full-body shot.
+ */
+export async function faceCloseUp(image: BinaryImage): Promise<BinaryImage | null> {
+  try {
+    const rotated = await sharp(image.data).rotate().toBuffer();
+    const meta = await sharp(rotated).metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    if (!width || !height) return null;
+    // Portrait-like frames (face fills the image) need less cropping than full-body ones.
+    const top = height > width * 1.2 ? Math.round(height * 0.5) : height;
+    const data = await sharp(rotated)
+      .extract({ left: 0, top: 0, width, height: Math.max(1, top) })
+      .resize(768, 768, { fit: "cover", position: sharp.strategy.attention })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    return { data, mimeType: "image/jpeg" };
+  } catch {
+    return null;
+  }
+}

@@ -16,8 +16,11 @@ import {
   type ShootRequest,
 } from "@/lib/domain/schemas";
 import { planPhotoSession, randomModelPersona } from "@/lib/domain/photo-session";
-import { geminiConfig, imageGenerationConfig } from "@/lib/env";
+import { inferGarmentType, planOutfit } from "@/lib/domain/outfit";
+import { engineModel, geminiConfig, imageGenerationConfig } from "@/lib/env";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { exportFileName } from "@/lib/domain/files";
+import { BUCKET, removeObjects } from "../storage";
 import type { ActionResult, JobRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
 import { UserFacingError, check, runAction, toActionError } from "../action";
@@ -103,6 +106,7 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
           language: locale,
           modelPersona: null,
           location: null,
+          styling: null,
         };
         jobs.push({
           jobType: "image_generation",
@@ -153,11 +157,19 @@ export async function createPhotoSession(
     const cfg = imageGenerationConfig();
 
     const product = check(
-      await ctx.supabase.from("products").select("id, status").eq("id", req.productId).eq("organization_id", org).maybeSingle(),
+      await ctx.supabase
+        .from("products")
+        .select("id, status, title, category, ai_analysis")
+        .eq("id", req.productId)
+        .eq("organization_id", org)
+        .maybeSingle(),
       "Load product",
-    ) as { id: string; status: string } | null;
+    ) as { id: string; status: string; title: string; category: string | null; ai_analysis: { category?: string } | null } | null;
     if (!product) throw new UserFacingError("productNotFound");
     if (product.status === "archived") throw new UserFacingError("productArchived");
+    const garmentType = req.garmentType === "auto" ? inferGarmentType(product.category, product.ai_analysis?.category, product.title) : req.garmentType;
+    const styling = planOutfit(garmentType, req.idempotencyKey);
+    const model = engineModel(cfg, req.engine);
 
     let modelRefIds: string[] = [];
     if (req.modelProfileId) {
@@ -219,11 +231,12 @@ export async function createPhotoSession(
         language: locale,
         modelPersona: persona,
         location: shot.location,
+        styling,
       };
       return {
         jobType: "image_generation",
         provider: cfg.provider,
-        model: cfg.model,
+        model,
         idempotencyKey: `${req.idempotencyKey}:session:${i}`,
         productId: product.id,
         modelProfileId: req.modelProfileId,
@@ -245,7 +258,7 @@ export async function createPhotoSession(
       action: "photo_session.created",
       entityType: "product",
       entityId: product.id,
-      metadata: { batchId, jobs: rows.length, created, locations: req.locations, randomModel: Boolean(persona) },
+      metadata: { batchId, jobs: rows.length, created, locations: req.locations, randomModel: Boolean(persona), garmentType, engine: req.engine, model },
     });
     revalidatePath("/");
     revalidatePath("/jobs");
@@ -481,5 +494,50 @@ export async function dismissJobs(input: z.input<typeof dismissSchema>): Promise
     await audit({ organizationId: org, actorId: ctx.userId, action: "jobs.dismissed", entityType: "generation_job", entityId: rows[0]?.id ?? null, metadata: { count: rows.length, allFailed: data.allFailed } });
     revalidatePath("/");
     return { dismissed: rows.length };
+  });
+}
+
+/** Short-lived download link for the stored original (2K/4K) of one result. */
+export async function getResultDownloadUrl(resultId: string): Promise<ActionResult<{ url: string }>> {
+  return runAction("getResultDownloadUrl", async () => {
+    const ctx = await requireOrgContext("viewer");
+    const result = check(
+      await ctx.supabase
+        .from("generation_results")
+        .select("id, storage_path, mime_type, shot_type, products(sku)")
+        .eq("id", z.uuid().parse(resultId))
+        .eq("organization_id", ctx.org.organizationId)
+        .maybeSingle(),
+      "Load result",
+    ) as { id: string; storage_path: string; mime_type: string; shot_type: string | null; products: { sku: string } | null } | null;
+    if (!result) throw new UserFacingError("resultNotFound");
+    const fileName = exportFileName({ sku: result.products?.sku ?? null, shotType: result.shot_type, id: result.id, mimeType: result.mime_type });
+    const { data, error } = await ctx.supabase.storage.from(BUCKET).createSignedUrl(result.storage_path, 300, { download: fileName });
+    if (error || !data?.signedUrl) throw new Error(`Signing download failed: ${error?.message ?? "no url"}`);
+    return { url: data.signedUrl };
+  });
+}
+
+const deleteResultsSchema = z.object({ resultIds: z.array(z.uuid()).min(1).max(100) });
+
+/**
+ * Permanently delete generated results and their files. Admins only (the
+ * RLS policy on generation_results); usage and audit history are kept.
+ */
+export async function deleteResults(input: z.input<typeof deleteResultsSchema>): Promise<ActionResult<{ deleted: number }>> {
+  return runAction("deleteResults", async () => {
+    const ctx = await requireOrgContext("admin");
+    await enforceRateLimit("mutate", ctx.userId);
+    const { resultIds } = deleteResultsSchema.parse(input);
+    const org = ctx.org.organizationId;
+    const rows = check(
+      await ctx.supabase.from("generation_results").delete().eq("organization_id", org).in("id", resultIds).select("id, storage_path, thumbnail_path"),
+      "Delete results",
+    ) as { id: string; storage_path: string; thumbnail_path: string | null }[];
+    await removeObjects(rows.flatMap((r) => [r.storage_path, r.thumbnail_path ?? ""]));
+    await audit({ organizationId: org, actorId: ctx.userId, action: "results.deleted", entityType: "generation_result", entityId: rows[0]?.id ?? null, metadata: { count: rows.length } });
+    revalidatePath("/");
+    revalidatePath("/library");
+    return { deleted: rows.length };
   });
 }

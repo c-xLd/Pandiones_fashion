@@ -21,6 +21,7 @@ import {
   productContext,
   storeGeneratedImage,
   upscaleIfNeeded,
+  faceCloseUp,
 } from "./shared";
 
 export const imageGenerationHandler: JobHandler = {
@@ -29,30 +30,35 @@ export const imageGenerationHandler: JobHandler = {
     if (!parsed.success) throw permanent("Job configuration is invalid.", "invalid_config");
     const config = parsed.data;
 
-    const provider = getImageProvider();
+    const provider = getImageProvider(job.model);
     const product = await loadProduct(ctx.admin, job);
     const profile = await loadModelProfile(ctx.admin, job, job.model_profile_id);
     // Fit the references into the provider's limit (e.g. a job created for a
     // provider that accepts more): keep one model reference, garment first.
     const limit = provider.maxReferenceImages ?? Number.POSITIVE_INFINITY;
     const modelRefIds = config.modelReferenceAssetIds.slice(0, Math.max(0, Math.min(config.modelReferenceAssetIds.length, limit - 1)));
-    const productRefIds = config.productReferenceAssetIds.slice(0, Math.max(1, limit - modelRefIds.length));
+    // With a model reference, keep one slot for a face close-up (identity).
+    const faceSlot = profile && modelRefIds.length > 0 ? 1 : 0;
+    const productRefIds = config.productReferenceAssetIds.slice(0, Math.max(1, limit - modelRefIds.length - faceSlot));
     const productAssets = await loadProductAssets(ctx.admin, job, product.id, productRefIds);
     const modelAssets = profile ? await loadModelAssets(ctx.admin, job, profile.id, modelRefIds) : [];
 
-    const [productImages, modelImages] = await Promise.all([
+    const [productImages, downloadedModelImages] = await Promise.all([
       downloadReferences(ctx.admin, productAssets.map((a) => a.storage_path)),
       downloadReferences(ctx.admin, modelAssets.map((a) => a.storage_path)),
     ]);
+    // A close-up of the face next to the full reference helps keep identity.
+    const face = downloadedModelImages[0] && productAssets.length + downloadedModelImages.length < limit ? await faceCloseUp(downloadedModelImages[0]) : null;
+    const modelImages = face ? [...downloadedModelImages, face] : downloadedModelImages;
     await ctx.progress(20);
 
     const labels: ReferenceImageLabel[] = [
       ...productAssets.map((a, i) => ({ index: i + 1, kind: "product" as const, role: a.role })),
-      ...modelAssets.map((_, i) => ({ index: productAssets.length + i + 1, kind: "model" as const, role: "model" as const })),
+      ...modelImages.map((_, i) => ({ index: productAssets.length + i + 1, kind: "model" as const, role: "model" as const })),
     ];
     const references: LabelledImage[] = [
       ...productImages.map((img, i) => ({ ...img, label: `product reference, ${productAssets[i]?.role ?? "other"} view` })),
-      ...modelImages.map((img) => ({ ...img, label: "model identity reference" })),
+      ...modelImages.map((img, i) => ({ ...img, label: face && i === modelImages.length - 1 ? "model face close-up" : "model identity reference" })),
     ];
     const buildPrompt = provider.promptFormat === "concise" ? buildConciseProductShotPrompt : buildProductShotPrompt;
     const prompt = buildPrompt({
@@ -62,6 +68,7 @@ export const imageGenerationHandler: JobHandler = {
       refs: labels,
       regenerationNote: config.regenerationNote,
       modelPersona: profile ? null : config.modelPersona,
+      styling: config.styling,
     });
 
     let result;
@@ -109,6 +116,7 @@ export const imageGenerationHandler: JobHandler = {
           presetId: config.presetId,
           location: config.location,
           modelPersona: config.modelPersona,
+          styling: config.styling,
           productReferenceAssetIds: config.productReferenceAssetIds,
           modelReferenceAssetIds: config.modelReferenceAssetIds,
           finishReason: result.finishReason,
