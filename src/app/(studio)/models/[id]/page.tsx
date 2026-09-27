@@ -5,7 +5,7 @@ import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { deleteModelAsset, promoteResultToModelReference, setPrimaryModelAsset, updateModelProfile } from "@/server/actions/models";
 import { reviewResults } from "@/server/actions/generation";
-import { isGeminiConfigured } from "@/lib/env";
+import { isImageGenerationConfigured } from "@/lib/env";
 import type { ModelAssetRow, ModelProfileRow, ResultRow } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,7 +115,7 @@ export default async function ModelPage({ params }: { params: Promise<{ id: stri
                   modelId={model.id}
                   references={assets.map((a) => ({ id: a.id, url: a.thumbnail_path ? urls[a.thumbnail_path] ?? null : null }))}
                   disabledReason={
-                    !isGeminiConfigured() ? d.model.geminiMissing : model.status === "retired" ? d.model.retired : null
+                    !isImageGenerationConfigured() ? d.model.geminiMissing : model.status === "retired" ? d.model.retired : null
                   }
                 />
               )}

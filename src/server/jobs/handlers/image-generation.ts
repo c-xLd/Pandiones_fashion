@@ -1,6 +1,6 @@
 import "server-only";
 import { imageJobConfigSchema } from "@/lib/domain/schemas";
-import { buildProductShotPrompt, type ReferenceImageLabel } from "@/lib/domain/prompts";
+import { buildConciseProductShotPrompt, buildProductShotPrompt, type ReferenceImageLabel } from "@/lib/domain/prompts";
 import { ProviderError } from "@/lib/domain/jobs";
 import type { TokenUsage } from "@/lib/domain/costs";
 import { qualityReviewEnabled } from "@/lib/env";
@@ -28,10 +28,16 @@ export const imageGenerationHandler: JobHandler = {
     if (!parsed.success) throw permanent("Job configuration is invalid.", "invalid_config");
     const config = parsed.data;
 
+    const provider = getImageProvider();
     const product = await loadProduct(ctx.admin, job);
-    const productAssets = await loadProductAssets(ctx.admin, job, product.id, config.productReferenceAssetIds);
     const profile = await loadModelProfile(ctx.admin, job, job.model_profile_id);
-    const modelAssets = profile ? await loadModelAssets(ctx.admin, job, profile.id, config.modelReferenceAssetIds) : [];
+    // Fit the references into the provider's limit (e.g. a job created for a
+    // provider that accepts more): keep one model reference, garment first.
+    const limit = provider.maxReferenceImages ?? Number.POSITIVE_INFINITY;
+    const modelRefIds = config.modelReferenceAssetIds.slice(0, Math.max(0, Math.min(config.modelReferenceAssetIds.length, limit - 1)));
+    const productRefIds = config.productReferenceAssetIds.slice(0, Math.max(1, limit - modelRefIds.length));
+    const productAssets = await loadProductAssets(ctx.admin, job, product.id, productRefIds);
+    const modelAssets = profile ? await loadModelAssets(ctx.admin, job, profile.id, modelRefIds) : [];
 
     const [productImages, modelImages] = await Promise.all([
       downloadReferences(ctx.admin, productAssets.map((a) => a.storage_path)),
@@ -47,7 +53,8 @@ export const imageGenerationHandler: JobHandler = {
       ...productImages.map((img, i) => ({ ...img, label: `product reference, ${productAssets[i]?.role ?? "other"} view` })),
       ...modelImages.map((img) => ({ ...img, label: "model identity reference" })),
     ];
-    const prompt = buildProductShotPrompt({
+    const buildPrompt = provider.promptFormat === "concise" ? buildConciseProductShotPrompt : buildProductShotPrompt;
+    const prompt = buildPrompt({
       product: productContext(product),
       model: profile ? modelContext(profile) : null,
       style: config.style,
@@ -56,7 +63,6 @@ export const imageGenerationHandler: JobHandler = {
       modelPersona: profile ? null : config.modelPersona,
     });
 
-    const provider = getImageProvider();
     let result;
     try {
       result = await provider.generateImage({
@@ -79,7 +85,7 @@ export const imageGenerationHandler: JobHandler = {
       requestId: result.requestId,
       usage: result.usage,
       units: { images: result.images.length },
-      cost: tokenCost(result.model, result.resolvedModel, result.usage),
+      cost: result.cost ?? tokenCost(result.model, result.resolvedModel, result.usage),
       succeeded: true,
     });
 

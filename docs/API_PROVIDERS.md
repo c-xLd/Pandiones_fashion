@@ -40,6 +40,29 @@ The SDK also exposes `generateContent` via a newer "Interactions" API; this app 
 - Errors: HTTP 408/429/5xx, network errors and timeouts → transient (retry with backoff + jitter; 429 waits ≥30s). Prompt blocks and safety finish reasons → permanent. Empty `STOP` responses → retry once more.
 - Identity consistency: model reference images are sent as inputs, which *helps* but does not guarantee identity; use the model page's consistency view and QC `identity_inconsistency` flags.
 
+## Cloudflare Workers AI — FLUX.2 image generation (`IMAGE_PROVIDER=cloudflare`)
+
+Free option: the Workers AI free plan includes **10,000 neurons per day** (resets 00:00 UTC), no credit card.
+
+Verified on 2026-09-27 from Cloudflare's documentation sources (`cloudflare/cloudflare-docs`, files
+`src/content/workers-ai-models/flux-2-klein-4b.json`, `…/changelog/workers-ai/2026-01-28-flux-2-klein-9b-workers-ai.mdx`,
+`…/docs/workers-ai/platform/pricing.mdx`); the Cloudflare API itself was **not** reachable from the build environment, so no
+live call was made during development.
+
+- Endpoint: `POST https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/run/{model}` with `Authorization: Bearer {TOKEN}`,
+  `multipart/form-data`: `prompt` (required), `width`/`height` (256–1920), `input_image_0`…`input_image_3` (binary, up to 4
+  reference images, referenced in the prompt as "image 0"…), `seed`, `guidance`. Response `{ success, result: { image: base64 } }`.
+- Models: `@cf/black-forest-labs/flux-2-klein-4b` (default), `…/flux-2-klein-9b` (higher quality), `…/flux-2-dev`. All support
+  multi-reference editing; klein uses a fixed 4-step inference.
+- Pricing (list): klein 4B — 26.05 neurons per output 512² tile, 5.37 per input 512² tile; klein 9B — 1363.64 neurons for the
+  first output MP, 181.82 per additional MP and per input-image MP; $0.011 per 1,000 neurons beyond the free allocation.
+  A 768×1024 photo with two references costs ≈ 147 neurons on klein 4B (≈ 65 photos/day free); ≈ 1,700 on klein 9B (≈ 5/day).
+  Costs are recorded as list-price estimates; the free allocation is not subtracted.
+- Implementation: `src/lib/providers/cloudflare/flux.ts` (references are EXIF-rotated and downscaled to 1024 px JPEG), sizing,
+  cost and error mapping in `src/lib/domain/flux.ts` (exhausted daily allocation → permanent `provider_daily_quota`; 429/5xx
+  retried; NSFW refusals → `safety_filtered`). FLUX gets a concise natural-language prompt (`buildConciseProductShotPrompt`).
+- Product analysis and QC still use Gemini (`GEMINI_API_KEY`, free tier works with `GEMINI_ANALYSIS_MODEL=gemini-3.8-flash`).
+
 ## Gemini — analysis and QC
 
 - Env: `GEMINI_ANALYSIS_MODEL` (default `gemini-flash-latest`; pin a version for reproducibility and exact pricing), `AUTO_QUALITY_REVIEW`.

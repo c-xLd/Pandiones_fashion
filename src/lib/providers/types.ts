@@ -1,4 +1,4 @@
-import type { TokenUsage } from "@/lib/domain/costs";
+import type { CostEstimate, TokenUsage } from "@/lib/domain/costs";
 
 /**
  * Provider-independent contracts. The job handlers depend only on these
@@ -39,11 +39,20 @@ export interface ImageGenerationResult extends CallMetadata {
   text: string | null;
   finishReason: string | null;
   blockReason: string | null;
+  /** Provider-specific estimate when usage is not token based. */
+  cost?: CostEstimate;
 }
 
 export interface ImageGenerationProvider {
   readonly name: string;
   readonly model: string;
+  /**
+   * "detailed": long sectioned prompt with numbered references (Gemini).
+   * "concise": short natural-language prompt with 0-based "image N" references (FLUX).
+   */
+  readonly promptFormat?: "detailed" | "concise";
+  /** Hard limit on reference images, when the model has one. */
+  readonly maxReferenceImages?: number;
   generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResult>;
 }
 

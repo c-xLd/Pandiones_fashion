@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requirePageContext } from "@/server/context";
 import { signUrls } from "@/server/storage";
-import { geminiConfig, isGeminiConfigured } from "@/lib/env";
+import { imageGenerationConfig, isImageGenerationConfigured } from "@/lib/env";
 import { sanitizeSearch } from "@/lib/search";
 import type { ModelAssetRow, ModelProfileRow, ProductAssetRow, ProductRow, ShootPresetRow } from "@/lib/types";
 import type { ShootStyle } from "@/lib/domain/schemas";
@@ -88,8 +88,8 @@ export default async function NewShootPage({ searchParams }: { searchParams: Pro
 
   let maxReferences = 6;
   let disabledReason: string | null = null;
-  if (!isGeminiConfigured()) disabledReason = t.geminiMissing;
-  else maxReferences = geminiConfig().maxReferenceImages;
+  if (!isImageGenerationConfigured()) disabledReason = t.geminiMissing;
+  else maxReferences = imageGenerationConfig().maxReferenceImages;
   if (p.status === "archived") disabledReason = t.archived;
 
   return (

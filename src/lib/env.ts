@@ -66,10 +66,8 @@ export interface GeminiConfig {
 export function geminiConfig(): GeminiConfig {
   return {
     apiKey: requireVar("GEMINI_API_KEY", "Create a key in Google AI Studio."),
-    imageModel: requireVar(
-      "GEMINI_IMAGE_MODEL",
-      "Set it to an image-capable Gemini model ID verified with `npm run providers:models`.",
-    ),
+    // Only required when Gemini is the image provider (checked by GeminiImageProvider).
+    imageModel: read("GEMINI_IMAGE_MODEL") ?? "",
     analysisModel: read("GEMINI_ANALYSIS_MODEL") ?? "gemini-flash-latest",
     requestTimeoutMs: intFrom(120_000, 10_000, 600_000).parse(read("GEMINI_REQUEST_TIMEOUT_MS")),
     maxReferenceImages: intFrom(6, 1, 14).parse(read("GEMINI_MAX_REFERENCE_IMAGES")),
@@ -77,8 +75,70 @@ export function geminiConfig(): GeminiConfig {
   };
 }
 
+/** Gemini key present: enough for product analysis and quality review. */
 export function isGeminiConfigured(): boolean {
-  return Boolean(read("GEMINI_API_KEY") && read("GEMINI_IMAGE_MODEL"));
+  return Boolean(read("GEMINI_API_KEY"));
+}
+
+export type ImageProviderName = "gemini" | "cloudflare";
+
+/** Which provider generates images (IMAGE_PROVIDER, default "gemini"). */
+export function imageProviderName(): ImageProviderName {
+  const value = read("IMAGE_PROVIDER") ?? "gemini";
+  if (value !== "gemini" && value !== "cloudflare") {
+    throw new ConfigError(`IMAGE_PROVIDER must be "gemini" or "cloudflare" (got "${value}").`);
+  }
+  return value;
+}
+
+/** FLUX.2 [klein] 4B: multi-reference editing, cheapest per image on Workers AI. */
+export const DEFAULT_CLOUDFLARE_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b";
+
+export interface CloudflareConfig {
+  accountId: string;
+  apiToken: string;
+  imageModel: string;
+  requestTimeoutMs: number;
+}
+
+export function cloudflareConfig(): CloudflareConfig {
+  return {
+    accountId: requireVar("CLOUDFLARE_ACCOUNT_ID", "Find it in the Cloudflare dashboard (Workers AI → Use REST API)."),
+    apiToken: requireVar("CLOUDFLARE_API_TOKEN", "Create a token with the Workers AI permission."),
+    imageModel: read("CLOUDFLARE_IMAGE_MODEL") ?? DEFAULT_CLOUDFLARE_IMAGE_MODEL,
+    requestTimeoutMs: intFrom(120_000, 10_000, 600_000).parse(read("GEMINI_REQUEST_TIMEOUT_MS")),
+  };
+}
+
+/** FLUX.2 on Workers AI accepts up to 4 input images. */
+export const CLOUDFLARE_MAX_REFERENCE_IMAGES = 4;
+
+export interface ImageGenerationConfig {
+  provider: ImageProviderName;
+  model: string;
+  maxReferenceImages: number;
+}
+
+/** Provider, model and limits for image generation; throws ConfigError when incomplete. */
+export function imageGenerationConfig(): ImageGenerationConfig {
+  if (imageProviderName() === "cloudflare") {
+    const cf = cloudflareConfig();
+    return { provider: "cloudflare", model: cf.imageModel, maxReferenceImages: CLOUDFLARE_MAX_REFERENCE_IMAGES };
+  }
+  const g = geminiConfig();
+  if (!g.imageModel) {
+    throw new ConfigError("GEMINI_IMAGE_MODEL is not set. Set it to an image-capable Gemini model ID verified with `npm run providers:models`.");
+  }
+  return { provider: "gemini", model: g.imageModel, maxReferenceImages: g.maxReferenceImages };
+}
+
+export function isImageGenerationConfigured(): boolean {
+  try {
+    imageGenerationConfig();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export type VideoProviderName = "gemini-veo" | "none";

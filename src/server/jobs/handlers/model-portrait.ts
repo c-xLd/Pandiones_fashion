@@ -54,7 +54,7 @@ export const modelPortraitHandler: JobHandler = {
       requestId: result.requestId,
       usage: result.usage,
       units: { images: result.images.length },
-      cost: tokenCost(result.model, result.resolvedModel, result.usage),
+      cost: result.cost ?? tokenCost(result.model, result.resolvedModel, result.usage),
       succeeded: true,
     });
     if (await ctx.isCancelRequested()) {

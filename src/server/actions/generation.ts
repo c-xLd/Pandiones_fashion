@@ -16,7 +16,7 @@ import {
   type ShootRequest,
 } from "@/lib/domain/schemas";
 import { planPhotoSession, randomModelPersona } from "@/lib/domain/photo-session";
-import { geminiConfig } from "@/lib/env";
+import { geminiConfig, imageGenerationConfig } from "@/lib/env";
 import type { ActionResult, JobRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
 import { UserFacingError, check, runAction, toActionError } from "../action";
@@ -33,7 +33,7 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
     await enforceRateLimit("generate", ctx.userId);
     const req = shootRequestSchema.parse(input);
     const org = ctx.org.organizationId;
-    const cfg = geminiConfig();
+    const cfg = imageGenerationConfig();
 
     const total = req.shotTypes.length * req.style.variations;
     if (total > MAX_JOBS_PER_SHOOT) {
@@ -105,8 +105,8 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
         };
         jobs.push({
           jobType: "image_generation",
-          provider: "gemini",
-          model: cfg.imageModel,
+          provider: cfg.provider,
+          model: cfg.model,
           idempotencyKey: `${req.idempotencyKey}:${shotType}:${v}`,
           productId: req.productId,
           modelProfileId: req.modelProfileId,
@@ -149,7 +149,7 @@ export async function createPhotoSession(
     await enforceRateLimit("generate", ctx.userId);
     const req = photoSessionRequestSchema.parse(input);
     const org = ctx.org.organizationId;
-    const cfg = geminiConfig();
+    const cfg = imageGenerationConfig();
 
     const product = check(
       await ctx.supabase.from("products").select("id, status").eq("id", req.productId).eq("organization_id", org).maybeSingle(),
@@ -221,8 +221,8 @@ export async function createPhotoSession(
       };
       return {
         jobType: "image_generation",
-        provider: "gemini",
-        model: cfg.imageModel,
+        provider: cfg.provider,
+        model: cfg.model,
         idempotencyKey: `${req.idempotencyKey}:session:${i}`,
         productId: product.id,
         modelProfileId: req.modelProfileId,
@@ -276,7 +276,7 @@ export async function regenerateResult(input: z.input<typeof regenerateSchema>):
     if (job.job_type !== "image_generation" && job.job_type !== "model_portrait") {
       throw new UserFacingError("onlyImagesRegenerate");
     }
-    const cfg = geminiConfig();
+    const cfg = imageGenerationConfig();
     let config: Record<string, unknown> = job.config;
     if (job.job_type === "image_generation") {
       const parsed = imageJobConfigSchema.parse(job.config);
@@ -287,8 +287,8 @@ export async function regenerateResult(input: z.input<typeof regenerateSchema>):
     const { jobs } = await enqueueJobs(ctx, [
       {
         jobType: job.job_type,
-        provider: "gemini",
-        model: cfg.imageModel,
+        provider: cfg.provider,
+        model: cfg.model,
         idempotencyKey: data.idempotencyKey,
         productId: job.product_id,
         modelProfileId: job.model_profile_id,
@@ -316,17 +316,14 @@ export async function retryJob(jobId: string): Promise<ActionResult<{ jobId: str
     ) as JobRow | null;
     if (!job) throw new UserFacingError("jobNotFound");
     if (job.status !== "failed" && job.status !== "cancelled") throw new UserFacingError("onlyFailedRetry");
-    const cfg = geminiConfig();
-    const model =
-      job.job_type === "image_generation" || job.job_type === "model_portrait"
-        ? cfg.imageModel
-        : job.job_type === "video_generation"
-          ? job.model
-          : cfg.analysisModel;
+    const isImage = job.job_type === "image_generation" || job.job_type === "model_portrait";
+    // Image retries use the currently configured image provider.
+    const image = isImage ? imageGenerationConfig() : null;
+    const model = image ? image.model : job.job_type === "video_generation" ? job.model : geminiConfig().analysisModel;
     const { jobs } = await enqueueJobs(ctx, [
       {
         jobType: job.job_type,
-        provider: job.provider,
+        provider: image ? image.provider : job.provider,
         model,
         idempotencyKey: `retry:${job.id}:${randomUUID()}`,
         productId: job.product_id,

@@ -30,7 +30,9 @@
 cp .env.example .env.local
 ```
 
-Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `BACKGROUND_JOB_SECRET` (`openssl rand -hex 32`), `GEMINI_API_KEY`, `GEMINI_IMAGE_MODEL`.
+Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `BACKGROUND_JOB_SECRET` (`openssl rand -hex 32`), `GEMINI_API_KEY` (analysis/QC; the free tier works), and an image provider:
+- **Free:** `IMAGE_PROVIDER=cloudflare`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (Cloudflare dashboard → Workers AI → *Use REST API* → create a Workers AI token). FLUX.2 [klein] 4B, 10,000 free neurons/day. See [API_PROVIDERS.md](API_PROVIDERS.md).
+- **Gemini:** `GEMINI_IMAGE_MODEL` (Gemini image models have no free-tier API quota; enable billing on the key's project).
 Recommended: `APP_URL`, `GEMINI_ANALYSIS_MODEL` (pinned), `CRON_SECRET` (Vercel).
 Optional: video (`VIDEO_PROVIDER`, `VIDEO_MODEL`, …), tuning, `PRICING_OVERRIDES_JSON`. Every variable is documented in `.env.example`.
 

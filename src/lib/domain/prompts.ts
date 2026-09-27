@@ -158,6 +158,56 @@ export function buildProductShotPrompt(input: {
   return sections.join("\n\n");
 }
 
+/**
+ * Short natural-language prompt for models such as FLUX.2 that take input
+ * images by 0-based index ("image 0"). Same constraints as the detailed
+ * prompt, condensed: garment fidelity first, then model, then direction.
+ */
+export function buildConciseProductShotPrompt(input: {
+  product: ProductContext;
+  model: ModelContext | null;
+  style: ShootStyle;
+  refs: ReferenceImageLabel[];
+  regenerationNote?: string | null;
+  modelPersona?: string | null;
+}): string {
+  const { product, model, style, refs } = input;
+  const ref = (r: ReferenceImageLabel) => `image ${r.index - 1}`;
+  const productRefs = refs.filter((r) => r.kind === "product");
+  const modelRefs = refs.filter((r) => r.kind === "model");
+  const parts: string[] = [];
+  parts.push(
+    `Photorealistic professional e-commerce fashion photograph of one adult fashion model (21+) wearing the exact garment shown in ${productRefs
+      .map((r) => `${ref(r)} (${r.role} view)`)
+      .join(", ")}.`,
+  );
+  parts.push(
+    "Reproduce the garment exactly: same colours, fabric, pattern, lace, straps, seams, closures and trims, same silhouette; do not redesign it, add or remove elements, or invent unseen details.",
+  );
+  const facts = [product.category, product.color].filter(Boolean).join(", ");
+  parts.push(`Product: ${product.title}${facts ? ` (${facts})` : ""}.`);
+  if (modelRefs.length) {
+    parts.push(`The model has the same face, hair and identity as the person in ${modelRefs.map(ref).join(" and ")}.`);
+  } else if (!model && input.modelPersona) {
+    parts.push(`The model is a fictional person: ${input.modelPersona}. Do not resemble any real or famous person.`);
+  }
+  if (model) {
+    const look = Object.entries(model.appearance)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`);
+    if (look.length) parts.push(`Model appearance: ${look.join(", ")}.`);
+  }
+  parts.push(`${SHOT_DESCRIPTIONS[style.shotType]}, ${FRAMING_DESCRIPTIONS[style.framing]}.`);
+  if (style.pose) parts.push(`Pose: ${style.pose}.`);
+  if (style.cameraAngle) parts.push(`Camera: ${style.cameraAngle}.`);
+  if (style.background) parts.push(`Setting: ${style.background}.`);
+  if (style.lighting) parts.push(`Lighting: ${style.lighting}.`);
+  if (style.creativeInstructions) parts.push(style.creativeInstructions);
+  if (input.regenerationNote) parts.push(`Fix: ${input.regenerationNote}`);
+  parts.push("Tasteful, non-explicit catalogue photo, sharp focus on the garment, natural skin texture, realistic hands.");
+  return parts.join(" ");
+}
+
 export function buildModelPortraitPrompt(model: ModelContext, instructions: string, hasReferences: boolean): string {
   const parts = [
     "Create a photorealistic studio reference portrait of a fashion model for a model casting card.",

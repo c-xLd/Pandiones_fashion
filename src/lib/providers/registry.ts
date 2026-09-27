@@ -1,6 +1,7 @@
 import "server-only";
-import { ConfigError, geminiConfig, videoConfig } from "@/lib/env";
+import { ConfigError, cloudflareConfig, geminiConfig, imageProviderName, videoConfig } from "@/lib/env";
 import { GeminiImageProvider, GeminiVisionProvider } from "./gemini/client";
+import { CloudflareFluxImageProvider } from "./cloudflare/flux";
 import { GeminiVeoProvider } from "./video/gemini-veo";
 import type { ImageGenerationProvider, VideoGenerationProvider, VisionProvider } from "./types";
 
@@ -20,7 +21,11 @@ export function setProviderOverrides(next: Overrides): void {
 }
 
 export function getImageProvider(): ImageGenerationProvider {
-  return overrides.image ?? new GeminiImageProvider(geminiConfig());
+  if (overrides.image) return overrides.image;
+  if (imageProviderName() === "cloudflare") return new CloudflareFluxImageProvider(cloudflareConfig());
+  const cfg = geminiConfig();
+  if (!cfg.imageModel) throw new ConfigError("GEMINI_IMAGE_MODEL is not set. Set it to an image-capable Gemini model ID verified with `npm run providers:models`.");
+  return new GeminiImageProvider(cfg);
 }
 
 export function getVisionProvider(): VisionProvider {

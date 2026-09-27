@@ -2,7 +2,7 @@ import { Trash2 } from "lucide-react";
 import { requirePageContext, roleAtLeast } from "@/server/context";
 import { removeMember } from "@/server/actions/settings";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { geminiConfig, isGeminiConfigured, qualityReviewEnabled, videoConfig } from "@/lib/env";
+import { geminiConfig, imageGenerationConfig, isGeminiConfigured, qualityReviewEnabled, videoConfig } from "@/lib/env";
 import { formatDateTime } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -45,7 +45,16 @@ export default async function SettingsPage() {
   let gemini: { image: string; analysis: string; maxRefs: number } | null = null;
   if (isGeminiConfigured()) {
     const g = geminiConfig();
-    gemini = { image: g.imageModel, analysis: g.analysisModel, maxRefs: g.maxReferenceImages };
+    let image = "—";
+    let maxRefs = g.maxReferenceImages;
+    try {
+      const ic = imageGenerationConfig();
+      image = `${ic.model} (${ic.provider})`;
+      maxRefs = ic.maxReferenceImages;
+    } catch {
+      // Image generation not configured; analysis/QC still work with the key.
+    }
+    gemini = { image, analysis: g.analysisModel, maxRefs };
   }
   let video: { provider: string; model: string | null; durations: string } = { provider: "none", model: null, durations: "" };
   try {

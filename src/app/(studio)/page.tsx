@@ -5,7 +5,7 @@ import { AlertTriangle, Clapperboard, Loader2 } from "lucide-react";
 import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { budgetState } from "@/lib/domain/costs";
-import { isGeminiConfigured } from "@/lib/env";
+import { isImageGenerationConfigured } from "@/lib/env";
 import { formatMoney, cn } from "@/lib/utils";
 import { getI18n } from "@/lib/i18n/server";
 import { pageMetadata } from "@/lib/i18n/metadata";
@@ -113,7 +113,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
 
   let disabledReason: string | null = null;
   if (!canEdit) disabledReason = t.readOnly;
-  else if (!isGeminiConfigured()) disabledReason = d.shoot.geminiMissing;
+  else if (!isImageGenerationConfigured()) disabledReason = d.shoot.geminiMissing;
 
   const jobAspect = (config: Record<string, unknown>, jobType: string) => {
     const style = (config.style ?? {}) as Record<string, unknown>;
@@ -138,7 +138,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
           <AlertDescription>{d.dashboard.forbidden}</AlertDescription>
         </Alert>
       )}
-      {!isGeminiConfigured() && (
+      {!isImageGenerationConfigured() && (
         <Alert variant="warning" className="mb-4">
           <AlertTitle>{d.dashboard.geminiMissingTitle}</AlertTitle>
           <AlertDescription>{d.dashboard.geminiMissingBody}</AlertDescription>

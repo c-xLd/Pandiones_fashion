@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { IMAGE_ASPECT_RATIOS, IMAGE_SIZES, modelProfileInputSchema } from "@/lib/domain/schemas";
-import { geminiConfig } from "@/lib/env";
+import { imageGenerationConfig } from "@/lib/env";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ActionResult, ModelAssetRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
@@ -204,7 +204,7 @@ export async function requestModelPortrait(input: z.input<typeof portraitSchema>
     const ctx = await requireOrgContext("editor");
     await enforceRateLimit("generate", ctx.userId);
     const data = portraitSchema.parse(input);
-    const cfg = geminiConfig();
+    const cfg = imageGenerationConfig();
     const profile = check(
       await ctx.supabase.from("model_profiles").select("id, status").eq("id", data.modelId).eq("organization_id", ctx.org.organizationId).maybeSingle(),
       "Load model",
@@ -214,8 +214,8 @@ export async function requestModelPortrait(input: z.input<typeof portraitSchema>
     const { jobs } = await enqueueJobs(ctx, [
       {
         jobType: "model_portrait",
-        provider: "gemini",
-        model: cfg.imageModel,
+        provider: cfg.provider,
+        model: cfg.model,
         idempotencyKey: data.idempotencyKey,
         modelProfileId: data.modelId,
         inputAssetRefs: data.referenceAssetIds.map((id) => ({ kind: "model_asset", id })),
