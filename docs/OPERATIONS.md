@@ -4,7 +4,7 @@
 
 Jobs are rows in Postgres; *something* must call the worker regularly. Pick one (they can be combined safely — claims use `SKIP LOCKED` leases):
 
-1. **Vercel Cron (Pro/Enterprise)** — `vercel.json` calls `GET /api/jobs/run` every minute with `Authorization: Bearer $CRON_SECRET`. Each invocation processes jobs for up to ~150s plus in-flight work.
+1. **Vercel Cron** — `vercel.json` ships with a **daily** safety-net run (`17 3 * * *`) so deployments succeed on every plan, including Hobby. On Pro/Enterprise you can change the schedule to `* * * * *` (every minute). Vercel sends `Authorization: Bearer $CRON_SECRET`. Each invocation processes jobs for up to ~150s plus in-flight work. **A daily run alone is not enough for normal use — add option 2 or 3.**
 2. **External scheduler** (any plan, e.g. Vercel Hobby, which only allows daily crons):
    ```bash
    curl -fsS -X POST -H "Authorization: Bearer $BACKGROUND_JOB_SECRET" https://<app>/api/jobs/run

@@ -56,7 +56,7 @@ Sign up → create an organization → **Products → New product** → upload r
 
 1. Import the repository; framework preset Next.js.
 2. Add all environment variables (Production + Preview). Set `APP_URL` to the production URL and `CRON_SECRET` to a random value.
-3. `vercel.json` schedules `GET /api/jobs/run` every minute. **Vercel Hobby only allows daily cron jobs** — on Hobby, use an external scheduler instead (see [OPERATIONS.md](OPERATIONS.md#scheduling-the-worker)).
+3. `vercel.json` schedules a daily safety-net `GET /api/jobs/run` (valid on every plan). For timely processing add a per-minute trigger: Supabase `pg_cron` + `pg_net`, an external scheduler, or on Vercel Pro change the schedule to `* * * * *` (see [OPERATIONS.md](OPERATIONS.md#scheduling-the-worker)). Point triggers at the production domain: preview/deployment URLs are behind Vercel Authentication by default.
 4. `/api/jobs/run` and `/api/export` declare `maxDuration = 300`. Ensure your plan allows it (Fluid compute) or lower `GEMINI_REQUEST_TIMEOUT_MS` accordingly.
 5. After deploying, open **Settings → Verify provider models now** as an admin.
 
