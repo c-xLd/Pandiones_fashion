@@ -29,7 +29,7 @@ function cssAspect(value: unknown, fallback = "3/4"): string {
   return typeof value === "string" && /^\d+:\d+$/.test(value) ? value.replace(":", "/") : fallback;
 }
 
-export default async function CreatePage({ searchParams }: { searchParams: Promise<{ error?: string; kind?: string }> }) {
+export default async function CreatePage({ searchParams }: { searchParams: Promise<{ error?: string; kind?: string; productId?: string; modelId?: string }> }) {
   const sp = await searchParams;
   const kind = sp.kind === "image" || sp.kind === "video" ? sp.kind : null;
   const ctx = await requirePageContext();
@@ -287,6 +287,8 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
           thumb: signed(modelPrimary(m)?.thumbnail_path),
         }))}
         disabledReason={disabledReason}
+        initialProductId={sp.productId}
+        initialModelId={sp.modelId}
       />
     </div>
   );

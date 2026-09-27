@@ -276,6 +276,7 @@ export async function promoteResultToModelReference(resultId: string): Promise<A
 }
 
 const quickModelSchema = z.object({
+  name: z.string().trim().max(120).optional(),
   adultConfirmed: z.literal(true),
   consentConfirmed: z.literal(true),
 });
@@ -288,9 +289,9 @@ export async function quickCreateModel(input: z.input<typeof quickModelSchema>):
   return runAction("quickCreateModel", async () => {
     const ctx = await requireOrgContext("editor");
     await enforceRateLimit("mutate", ctx.userId);
-    quickModelSchema.parse(input);
+    const data = quickModelSchema.parse(input);
     const suffix = randomUUID().slice(0, 4).toUpperCase();
-    const name = `Model ${suffix}`;
+    const name = data.name || `Model ${suffix}`;
     const row = check(
       await ctx.supabase
         .from("model_profiles")

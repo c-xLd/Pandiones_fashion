@@ -1,22 +1,21 @@
 import { requirePageContext } from "@/server/context";
-import { createProduct } from "@/server/actions/products";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/studio/page-header";
-import { ProductForm } from "../product-form";
+import { QuickAddForm } from "@/components/studio/quick-add-form";
 import { getI18n } from "@/lib/i18n/server";
 import { pageMetadata } from "@/lib/i18n/metadata";
 
-export const generateMetadata = pageMetadata((d) => d.products.newTitle);
+export const generateMetadata = pageMetadata((d) => d.quickAdd.productTitle);
 
 export default async function NewProductPage() {
   await requirePageContext("editor");
   const { d } = await getI18n();
   return (
     <>
-      <PageHeader title={d.products.newTitle} description={d.products.newDescription} />
-      <Card className="max-w-3xl">
+      <PageHeader title={d.quickAdd.productTitle} description={d.quickAdd.productBody} />
+      <Card className="max-w-2xl">
         <CardContent className="pt-5">
-          <ProductForm action={createProduct} />
+          <QuickAddForm kind="product" />
         </CardContent>
       </Card>
     </>

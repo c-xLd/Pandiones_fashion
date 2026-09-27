@@ -20,6 +20,9 @@ export interface ComposerProps {
   products: { id: string; sku: string; title: string; thumb: string | null; hasAssets: boolean }[];
   models: { id: string; name: string; thumb: string | null }[];
   disabledReason: string | null;
+  /** Preselected after adding a product/model (e.g. from /products/new). */
+  initialProductId?: string;
+  initialModelId?: string;
 }
 
 const MAX_GARMENT_FILES = 4;
@@ -29,7 +32,7 @@ type LocalProduct = ComposerProps["products"][number];
 type LocalModel = ComposerProps["models"][number];
 
 /** Flow-style shoot bar: garment + model + locations → a varied photo session. */
-export function Composer({ products, models, disabledReason }: ComposerProps) {
+export function Composer({ products, models, disabledReason, initialProductId, initialModelId }: ComposerProps) {
   const router = useRouter();
   const { d } = useI18n();
   const t = d.create;
@@ -44,8 +47,10 @@ export function Composer({ products, models, disabledReason }: ComposerProps) {
   const allProducts = useMemo(() => [...localProducts.filter((l) => !products.some((p) => p.id === l.id)), ...products], [localProducts, products]);
   const allModels = useMemo(() => [...localModels.filter((l) => !models.some((m) => m.id === l.id)), ...models], [localModels, models]);
 
-  const [productId, setProductId] = useState(products.find((p) => p.hasAssets)?.id ?? "");
-  const [modelId, setModelId] = useState(""); // "" = random model
+  const [productId, setProductId] = useState(
+    (products.find((p) => p.id === initialProductId && p.hasAssets) ?? products.find((p) => p.hasAssets))?.id ?? "",
+  );
+  const [modelId, setModelId] = useState(models.some((m) => m.id === initialModelId) ? (initialModelId as string) : ""); // "" = random model
   const [locations, setLocations] = useState<SessionLocation[]>(DEFAULT_LOCATIONS);
   const [count, setCount] = useState<number>(6);
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("3:4");
