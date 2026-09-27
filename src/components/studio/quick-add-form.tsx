@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
-import { quickCreateProduct } from "@/server/actions/products";
-import { quickCreateModel } from "@/server/actions/models";
+import { discardEmptyProduct, quickCreateProduct } from "@/server/actions/products";
+import { discardEmptyModel, quickCreateModel } from "@/server/actions/models";
 import { uploadFile } from "./upload-client";
 import { useI18n } from "@/lib/i18n/client";
 import { fmt } from "@/lib/i18n/config";
@@ -75,12 +75,16 @@ export function QuickAddForm({ kind }: { kind: "product" | "model" }) {
       let uploaded = 0;
       setProgress({ done: 0, total: files.length });
       for (const [i, item] of files.entries()) {
-        const res = await uploadFile(kind === "product" ? "products" : "models", id, item.file, i === 0 ? "front" : "other", undefined, d.uploader.uploadFailed);
+        const res = await uploadFile(kind === "product" ? "products" : "models", id, item.file, i === 0 ? "front" : "other", undefined, d.uploader.uploadFailed, d.uploader.unreadable);
         if (res.ok) uploaded++;
         else failed = res.error;
         setProgress({ done: i + 1, total: files.length });
       }
-      if (!uploaded) return setError(fmt(t.someFailed, { message: failed ?? "" }));
+      if (!uploaded) {
+        // Nothing was uploaded: remove the empty record so it does not linger.
+        await (kind === "product" ? discardEmptyProduct(id) : discardEmptyModel(id));
+        return setError(failed ?? t.needPhoto);
+      }
       router.push(kind === "product" ? `/?productId=${id}` : `/?modelId=${id}`);
       router.refresh();
     } finally {

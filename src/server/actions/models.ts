@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { IMAGE_ASPECT_RATIOS, IMAGE_SIZES, modelProfileInputSchema } from "@/lib/domain/schemas";
 import { geminiConfig } from "@/lib/env";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ActionResult, ModelAssetRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
 import { UserFacingError, check, runAction, toActionError } from "../action";
@@ -312,5 +313,98 @@ export async function quickCreateModel(input: z.input<typeof quickModelSchema>):
     await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "model_profile.created", entityType: "model_profile", entityId: row.id, metadata: { quick: true } });
     revalidatePath("/models");
     return { id: row.id, name };
+  });
+}
+
+/** Same as discardEmptyProduct, for quick-added model profiles. */
+export async function discardEmptyModel(modelId: string): Promise<ActionResult> {
+  return runAction("discardEmptyModel", async () => {
+    const ctx = await requireOrgContext("editor");
+    const id = z.uuid().parse(modelId);
+    const org = ctx.org.organizationId;
+    const admin = getSupabaseAdmin();
+    const since = new Date(Date.now() - 3600_000).toISOString();
+    const { count } = await admin.from("model_profile_assets").select("id", { count: "exact", head: true }).eq("model_profile_id", id).eq("organization_id", org);
+    if ((count ?? 0) > 0) return undefined;
+    check(
+      await admin.from("model_profiles").delete().eq("id", id).eq("organization_id", org).eq("created_by", ctx.userId).gte("created_at", since),
+      "Discard model",
+    );
+    return undefined;
+  });
+}
+
+const saveResultModelSchema = z.object({ resultId: z.uuid(), name: z.string().trim().max(120).optional() });
+
+/**
+ * Saves the (fictional, AI-generated) person in a generated photo as a model
+ * profile, with that photo as its primary identity reference, so future
+ * shoots can reuse the same model.
+ */
+export async function saveResultAsModel(input: z.input<typeof saveResultModelSchema>): Promise<ActionResult<{ id: string; name: string }>> {
+  return runAction("saveResultAsModel", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("mutate", ctx.userId);
+    const data = saveResultModelSchema.parse(input);
+    const org = ctx.org.organizationId;
+    const result = check(
+      await ctx.supabase.from("generation_results").select("*").eq("id", data.resultId).eq("organization_id", org).maybeSingle(),
+      "Load result",
+    ) as ResultRow | null;
+    if (!result || result.kind !== "image") throw new UserFacingError("imageNotFound");
+    // Photos of an existing profile already belong to that model.
+    if (result.model_profile_id) throw new UserFacingError("resultHasModel");
+
+    const persona = typeof result.settings?.modelPersona === "string" ? result.settings.modelPersona : null;
+    const suffix = randomUUID().slice(0, 4).toUpperCase();
+    const name = data.name || `Model ${suffix}`;
+    const profile = check(
+      await ctx.supabase
+        .from("model_profiles")
+        .insert({
+          code: `AI-${suffix}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          display_name: name,
+          description: persona,
+          appearance: {},
+          status: "active",
+          // Generated people are fictional adults: every generation prompt requires 21+.
+          adult_confirmed: true,
+          consent_notes: `Fictional AI-generated model saved from generated result ${result.id}.`,
+          organization_id: org,
+          created_by: ctx.userId,
+        })
+        .select("id")
+        .single(),
+      "Create model profile",
+    ) as { id: string };
+
+    const bytes = await downloadObject(result.storage_path);
+    const processed = await processImage(bytes, { enforceMinSize: false });
+    const dest = paths.modelSource(org, profile.id, processed.mimeType);
+    const thumb = paths.thumbnailFor(dest);
+    await uploadObject(dest, bytes, processed.mimeType);
+    await uploadObject(thumb, processed.thumbnail, "image/webp");
+    check(
+      await ctx.supabase.from("model_profile_assets").insert({
+        organization_id: org,
+        model_profile_id: profile.id,
+        storage_path: dest,
+        thumbnail_path: thumb,
+        mime_type: processed.mimeType,
+        size_bytes: processed.sizeBytes,
+        width: processed.width,
+        height: processed.height,
+        sha256: processed.sha256,
+        is_primary: true,
+        source: "generated",
+        source_result_id: result.id,
+        created_by: ctx.userId,
+      }),
+      "Save model reference",
+    );
+    await audit({ organizationId: org, actorId: ctx.userId, action: "model_profile.created", entityType: "model_profile", entityId: profile.id, metadata: { fromResult: result.id } });
+    revalidatePath("/models");
+    revalidatePath("/");
+    return { id: profile.id, name };
   });
 }

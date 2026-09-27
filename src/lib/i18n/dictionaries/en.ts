@@ -149,6 +149,11 @@ export const en = {
     moreDetails: "More details (optional)",
   },
   create: {
+    saveModel: "Save this model",
+    saveModelBody: "Save the person in this photo as a model and reuse them in future shoots. The photo becomes the model's identity reference.",
+    saveModelName: "Model name (optional)",
+    saveModelDone: "Model saved.",
+    shootWithModel: "Start a shoot with this model",
     metaTitle: "Create",
     heroTitle: "What will you create today?",
     heroBody: "Pick a product, a model and a look, then describe the scene. Every image runs as a background job.",
@@ -349,6 +354,7 @@ export const en = {
     },
   },
   uploader: {
+    unreadable: "This photo could not be read. Choose a photo saved on this device (not a cloud-only photo) and try again.",
     dragHere: "Drag images here or",
     choose: "Choose files",
     chooseLabel: "Choose image files",
@@ -952,6 +958,7 @@ export const en = {
     modelNotFound: "Model profile not found.",
     uploadNotFound: "Upload not found. Please upload the file again.",
     duplicateModelRef: "This exact image is already a reference for this model.",
+    resultHasModel: "This photo already belongs to a saved model.",
     imageNotFound: "Image not found.",
     modelRetired: "Retired models cannot be used for new generations.",
     notLinkedToModel: "This image is not linked to a model profile.",

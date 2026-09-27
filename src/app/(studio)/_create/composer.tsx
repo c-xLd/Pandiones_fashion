@@ -8,8 +8,8 @@ import { IMAGE_ASPECT_RATIOS, type ImageAspectRatio } from "@/lib/domain/schemas
 import { SESSION_LOCATIONS, SESSION_SHOT_COUNTS, MAX_SESSION_LOCATIONS, type SessionLocation } from "@/lib/domain/photo-session";
 import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
 import { createPhotoSession } from "@/server/actions/generation";
-import { quickCreateProduct } from "@/server/actions/products";
-import { quickCreateModel } from "@/server/actions/models";
+import { discardEmptyProduct, quickCreateProduct } from "@/server/actions/products";
+import { discardEmptyModel, quickCreateModel } from "@/server/actions/models";
 import { uploadFile } from "@/components/studio/upload-client";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -94,9 +94,13 @@ export function Composer({ products, models, disabledReason, initialProductId, i
       if (!created.ok) return setError(created.error);
       let uploaded = 0;
       for (const [i, file] of list.entries()) {
-        const res = await uploadFile("products", created.data.id, file, i === 0 ? "front" : "other", undefined, uploadError);
+        const res = await uploadFile("products", created.data.id, file, i === 0 ? "front" : "other", undefined, uploadError, d.uploader.unreadable);
         if (res.ok) uploaded++;
         else setError(res.error);
+      }
+      if (!uploaded) {
+        await discardEmptyProduct(created.data.id);
+        return;
       }
       setLocalProducts((prev) => [
         { id: created.data.id, sku: created.data.sku, title: title || t.newGarment, thumb: list[0] ? URL.createObjectURL(list[0]) : null, hasAssets: uploaded > 0 },
@@ -118,8 +122,11 @@ export function Composer({ products, models, disabledReason, initialProductId, i
     try {
       const created = await quickCreateModel({ adultConfirmed: true, consentConfirmed: true });
       if (!created.ok) return setError(created.error);
-      const res = await uploadFile("models", created.data.id, file, "other", undefined, uploadError);
-      if (!res.ok) return setError(res.error);
+      const res = await uploadFile("models", created.data.id, file, "other", undefined, uploadError, d.uploader.unreadable);
+      if (!res.ok) {
+        await discardEmptyModel(created.data.id);
+        return setError(res.error);
+      }
       setLocalModels((prev) => [{ id: created.data.id, name: created.data.name, thumb: URL.createObjectURL(file) }, ...prev]);
       setModelId(created.data.id);
       router.refresh();

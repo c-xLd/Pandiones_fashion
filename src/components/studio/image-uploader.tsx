@@ -61,7 +61,7 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
     const queue = items.filter((i) => i.state === "pending");
     await runPool(queue, CONCURRENCY, async (item) => {
       try {
-        const res = await uploadFile(target, entityId, item.file, item.role, (phase) => update(item.key, { state: phase }), d.uploader.uploadFailed);
+        const res = await uploadFile(target, entityId, item.file, item.role, (phase) => update(item.key, { state: phase }), d.uploader.uploadFailed, d.uploader.unreadable);
         if (res.ok) update(item.key, { state: "done", warning: res.warning ?? undefined });
         else update(item.key, { state: "error", message: res.error });
       } catch (err) {

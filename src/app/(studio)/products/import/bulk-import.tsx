@@ -80,7 +80,7 @@ export function BulkImport() {
       const productId = ensure.data[row.sku.trim()];
       if (!productId) return update(row.key, { state: "error", message: b.productNotCreated });
       try {
-        const res = await uploadFile("products", productId, row.file, row.role, (phase) => update(row.key, { state: phase }), d.uploader.uploadFailed);
+        const res = await uploadFile("products", productId, row.file, row.role, (phase) => update(row.key, { state: phase }), d.uploader.uploadFailed, d.uploader.unreadable);
         update(row.key, res.ok ? { state: "done", message: res.warning ?? undefined } : { state: "error", message: res.error });
       } catch (err) {
         update(row.key, { state: "error", message: err instanceof Error ? err.message : d.uploader.genericFailed });

@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageHeader } from "@/components/studio/page-header";
 import { QcBadge, StatusBadge } from "@/components/studio/status-badge";
 import { ActionButton } from "@/components/studio/action-button";
+import { SaveModelCard } from "./save-model";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 import { ReviewPanel } from "./review-panel";
 import { getI18n } from "@/lib/i18n/server";
@@ -122,6 +123,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
           </>
         }
       />
+      {canEdit && result.kind === "image" && !result.model_profile_id && !isPortrait && <SaveModelCard resultId={result.id} />}
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
         <div className="space-y-6">
           <Card>

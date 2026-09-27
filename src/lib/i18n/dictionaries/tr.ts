@@ -147,6 +147,11 @@ export const tr: typeof en = {
     moreDetails: "Ek bilgiler (isteğe bağlı)",
   },
   create: {
+    saveModel: "Bu modeli kaydet",
+    saveModelBody: "Bu fotoğraftaki kişiyi model olarak kaydedin, sonraki çekimlerde tekrar kullanın. Fotoğraf, modelin kimlik referansı olur.",
+    saveModelName: "Model adı (isteğe bağlı)",
+    saveModelDone: "Model kaydedildi.",
+    shootWithModel: "Bu modelle çekim başlat",
     metaTitle: "Oluştur",
     heroTitle: "Bugün ne oluşturmak istersiniz?",
     heroBody: "Bir ürün, bir model ve bir görünüm seçin, ardından sahneyi anlatın. Her görsel arka planda bir iş olarak üretilir.",
@@ -347,6 +352,7 @@ export const tr: typeof en = {
     },
   },
   uploader: {
+    unreadable: "Bu fotoğraf okunamadı. Cihazda kayıtlı bir fotoğraf seçin (yalnızca bulutta olan değil) ve tekrar deneyin.",
     dragHere: "Görselleri buraya sürükleyin veya",
     choose: "Dosya seç",
     chooseLabel: "Görsel dosyalarını seç",
@@ -950,6 +956,7 @@ export const tr: typeof en = {
     modelNotFound: "Model profili bulunamadı.",
     uploadNotFound: "Yükleme bulunamadı. Lütfen dosyayı tekrar yükleyin.",
     duplicateModelRef: "Bu görsel zaten bu modelin referansı.",
+    resultHasModel: "Bu fotoğraf zaten kayıtlı bir modele ait.",
     imageNotFound: "Görsel bulunamadı.",
     modelRetired: "Kullanım dışı modeller yeni üretimlerde kullanılamaz.",
     notLinkedToModel: "Bu görsel bir model profiline bağlı değil.",

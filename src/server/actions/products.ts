@@ -390,3 +390,25 @@ export async function quickCreateProduct(input: z.input<typeof quickProductSchem
     return { id: row.id, sku };
   });
 }
+
+/**
+ * Removes a product created by the quick-add flow when none of its photos
+ * could be uploaded. Only the creator can discard it, only while it is empty
+ * and recent; everything else goes through the regular (admin) delete.
+ */
+export async function discardEmptyProduct(productId: string): Promise<ActionResult> {
+  return runAction("discardEmptyProduct", async () => {
+    const ctx = await requireOrgContext("editor");
+    const id = z.uuid().parse(productId);
+    const org = ctx.org.organizationId;
+    const admin = getSupabaseAdmin();
+    const since = new Date(Date.now() - 3600_000).toISOString();
+    const { count } = await admin.from("product_assets").select("id", { count: "exact", head: true }).eq("product_id", id).eq("organization_id", org);
+    if ((count ?? 0) > 0) return undefined;
+    check(
+      await admin.from("products").delete().eq("id", id).eq("organization_id", org).eq("created_by", ctx.userId).gte("created_at", since),
+      "Discard product",
+    );
+    return undefined;
+  });
+}
