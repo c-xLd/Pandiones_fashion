@@ -4,7 +4,9 @@
 -- Baseline privileges: anonymous users get nothing; authenticated users get
 -- only what RLS policies and column grants below allow.
 -- ---------------------------------------------------------------------------
-revoke all on all tables in schema public from anon;
+-- Supabase grants every new table to anon/authenticated by default; start
+-- from zero and grant back only what each table needs below.
+revoke all on all tables in schema public from anon, authenticated;
 revoke all on all functions in schema public from anon, public;
 
 grant usage on schema public to authenticated, service_role;
@@ -243,7 +245,7 @@ language sql stable set search_path = '' as $$
 $$;
 grant execute on function public.org_month_spend(uuid) to authenticated;
 
-revoke execute on function public.claim_jobs(text, integer, integer, integer) from authenticated, public;
-revoke execute on function public.rate_limit_hit(text, integer, integer) from authenticated, public;
+revoke execute on function public.claim_jobs(text, integer, integer, integer) from anon, authenticated, public;
+revoke execute on function public.rate_limit_hit(text, integer, integer) from anon, authenticated, public;
 grant execute on function public.claim_jobs(text, integer, integer, integer) to service_role;
 grant execute on function public.rate_limit_hit(text, integer, integer) to service_role;

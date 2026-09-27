@@ -2,7 +2,9 @@
 -- Every tenant-owned table carries organization_id and is protected by RLS.
 
 create extension if not exists pgcrypto;
-create extension if not exists pg_trgm;
+-- Extensions live in the "extensions" schema (Supabase convention), not public.
+create schema if not exists extensions;
+create extension if not exists pg_trgm with schema extensions;
 
 -- ---------------------------------------------------------------------------
 -- Enums
@@ -138,8 +140,8 @@ create table public.products (
 );
 create index products_org_status_idx on public.products (organization_id, status, updated_at desc);
 -- Substring search on SKU / title (ILIKE '%q%') uses trigram indexes.
-create index products_sku_trgm_idx on public.products using gin (sku gin_trgm_ops);
-create index products_title_trgm_idx on public.products using gin (title gin_trgm_ops);
+create index products_sku_trgm_idx on public.products using gin (sku extensions.gin_trgm_ops);
+create index products_title_trgm_idx on public.products using gin (title extensions.gin_trgm_ops);
 create index products_category_idx on public.products (organization_id, category);
 create index products_tags_idx on public.products using gin (tags);
 create trigger products_updated_at before update on public.products

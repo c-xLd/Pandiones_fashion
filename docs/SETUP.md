@@ -22,7 +22,7 @@
    DATABASE_URL="postgres://postgres:<password>@db.<ref>.supabase.co:5432/postgres" npm run db:apply
    ```
 
-   Migrations (in order): `20260927000001_core_schema.sql`, `…02_rls_and_queue.sql`, `…03_storage_and_presets.sql`, `…04_reporting.sql`.
+   Migrations (in order): `20260927000001_core_schema.sql`, `…02_rls_and_queue.sql`, `…03_storage_and_presets.sql`, `…04_reporting.sql`, `…05_function_search_path.sql`.
 
 ## 2. Environment
 
