@@ -6,7 +6,10 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: () => ({ auth: { getClaims: async () => ({ data: claims.current ? { claims: claims.current } : null, error: null }) } }),
 }));
 const tick = vi.fn(async () => ({ claimed: 0 }));
-vi.mock("@/server/jobs/worker", () => ({ runWorkerTick: tick }));
+vi.mock("@/server/jobs/worker", () => ({ runWorkerTick: tick, nextDueAt: async () => null }));
+// Route handlers are called directly here, outside a Next.js request scope.
+const { afterSpy } = vi.hoisted(() => ({ afterSpy: vi.fn() }));
+vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: afterSpy }));
 vi.mock("@/lib/supabase/admin", () => ({ getSupabaseAdmin: () => ({}) }));
 
 const { middleware } = await import("@/middleware");
@@ -82,6 +85,8 @@ describe("worker endpoint authentication", () => {
       new NextRequest("https://studio.test/api/jobs/run", { method: "POST", headers: { authorization: `Bearer ${"s".repeat(40)}` } }),
     );
     expect(ok.status).toBe(200);
+    // The queue continuation is scheduled after the response.
+    expect(afterSpy).toHaveBeenCalled();
     process.env.CRON_SECRET = "c".repeat(40);
     const cron = await workerRoute.GET(new NextRequest("https://studio.test/api/jobs/run", { headers: { authorization: `Bearer ${"c".repeat(40)}` } }));
     expect(cron.status).toBe(200);

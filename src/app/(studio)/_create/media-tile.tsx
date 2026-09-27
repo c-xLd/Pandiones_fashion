@@ -22,7 +22,7 @@ export function MediaTile({ href, kind, url, alt, aspect, title, subtitle, badge
   return (
     <Link
       href={href}
-      className="group relative mb-3 block break-inside-avoid overflow-hidden rounded-2xl bg-card outline-none ring-ring focus-visible:ring-2"
+      className="flow-drop group relative mb-3 block break-inside-avoid overflow-hidden rounded-2xl bg-card outline-none ring-ring focus-visible:ring-2"
       style={{ aspectRatio: aspect }}
       onMouseEnter={() => void videoRef.current?.play().catch(() => undefined)}
       onMouseLeave={() => {

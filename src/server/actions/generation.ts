@@ -6,13 +6,16 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
   imageJobConfigSchema,
+  photoSessionRequestSchema,
   presetInputSchema,
   reviewInputSchema,
   shootRequestSchema,
   shootStyleSchema,
   type ImageJobConfig,
+  type PhotoSessionRequest,
   type ShootRequest,
 } from "@/lib/domain/schemas";
+import { planPhotoSession, randomModelPersona } from "@/lib/domain/photo-session";
 import { geminiConfig } from "@/lib/env";
 import type { ActionResult, JobRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
@@ -97,6 +100,8 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
           variationIndex: v,
           regenerationNote: null,
           language: locale,
+          modelPersona: null,
+          location: null,
         };
         jobs.push({
           jobType: "image_generation",
@@ -124,6 +129,125 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
     await audit({ organizationId: org, actorId: ctx.userId, action: "shoot.created", entityType: "product", entityId: req.productId, metadata: { batchId, jobs: rows.length, created } });
     revalidatePath("/jobs");
     revalidatePath(`/products/${req.productId}`);
+    return { batchId: rows[0]?.batch_id ?? batchId, jobCount: rows.length, created };
+  });
+}
+
+/** Product reference views in the order a session sends them to the model. */
+const SESSION_REF_ORDER = ["front", "side", "back", "detail", "fabric", "other"];
+const SESSION_MAX_PRODUCT_REFS = 4;
+
+/**
+ * One-click photo session: the server picks the references and plans varied
+ * shots (poses, angles, framings, locations), one background job per photo.
+ */
+export async function createPhotoSession(
+  input: PhotoSessionRequest,
+): Promise<ActionResult<{ batchId: string; jobCount: number; created: number }>> {
+  return runAction("createPhotoSession", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("generate", ctx.userId);
+    const req = photoSessionRequestSchema.parse(input);
+    const org = ctx.org.organizationId;
+    const cfg = geminiConfig();
+
+    const product = check(
+      await ctx.supabase.from("products").select("id, status").eq("id", req.productId).eq("organization_id", org).maybeSingle(),
+      "Load product",
+    ) as { id: string; status: string } | null;
+    if (!product) throw new UserFacingError("productNotFound");
+    if (product.status === "archived") throw new UserFacingError("productArchived");
+
+    let modelRefIds: string[] = [];
+    if (req.modelProfileId) {
+      const model = check(
+        await ctx.supabase.from("model_profiles").select("id, status").eq("id", req.modelProfileId).eq("organization_id", org).maybeSingle(),
+        "Load model",
+      ) as { id: string; status: string } | null;
+      if (!model) throw new UserFacingError("modelNotFound");
+      if (model.status === "retired") throw new UserFacingError("modelProfileRetired");
+      const modelAssets = check(
+        await ctx.supabase
+          .from("model_profile_assets")
+          .select("id, is_primary, created_at")
+          .eq("model_profile_id", model.id)
+          .eq("organization_id", org)
+          .order("is_primary", { ascending: false })
+          .order("created_at")
+          .limit(1),
+        "Load model assets",
+      ) as { id: string }[];
+      modelRefIds = modelAssets.map((a) => a.id);
+    }
+
+    const assets = check(
+      await ctx.supabase.from("product_assets").select("id, role, created_at").eq("product_id", product.id).eq("organization_id", org),
+      "Load assets",
+    ) as { id: string; role: string; created_at: string }[];
+    if (!assets.length) throw new UserFacingError("invalidProductRefs");
+    const productRefIds = [...assets]
+      .sort((a, b) => SESSION_REF_ORDER.indexOf(a.role) - SESSION_REF_ORDER.indexOf(b.role) || a.created_at.localeCompare(b.created_at))
+      .slice(0, Math.max(1, Math.min(SESSION_MAX_PRODUCT_REFS, cfg.maxReferenceImages - modelRefIds.length)))
+      .map((a) => a.id);
+
+    // Seeded by the idempotency key: a retried submission yields the same plan.
+    const plan = planPhotoSession({ count: req.count, locations: req.locations, seed: req.idempotencyKey });
+    const persona = !req.modelProfileId && req.randomModel ? randomModelPersona(req.idempotencyKey) : null;
+    const batchId = randomUUID();
+    const { locale } = await getI18n();
+    const jobs: EnqueueInput[] = plan.map((shot, i) => {
+      const config: ImageJobConfig = {
+        kind: "product_shot",
+        style: shootStyleSchema.parse({
+          shotType: shot.shotType,
+          pose: shot.pose,
+          cameraAngle: shot.cameraAngle,
+          framing: shot.framing,
+          background: shot.background,
+          lighting: shot.lighting,
+          aspectRatio: req.aspectRatio,
+          imageSize: "1K",
+          variations: 1,
+          creativeInstructions: req.instructions,
+        }),
+        presetId: null,
+        productReferenceAssetIds: productRefIds,
+        modelReferenceAssetIds: modelRefIds,
+        variationIndex: i,
+        regenerationNote: null,
+        language: locale,
+        modelPersona: persona,
+        location: shot.location,
+      };
+      return {
+        jobType: "image_generation",
+        provider: "gemini",
+        model: cfg.imageModel,
+        idempotencyKey: `${req.idempotencyKey}:session:${i}`,
+        productId: product.id,
+        modelProfileId: req.modelProfileId,
+        batchId,
+        inputAssetRefs: [
+          ...productRefIds.map((id) => ({ kind: "product_asset", id })),
+          ...modelRefIds.map((id) => ({ kind: "model_asset", id })),
+        ],
+        config,
+      };
+    });
+    const { jobs: rows, created } = await enqueueJobs(ctx, jobs);
+    if (created > 0) {
+      check(await ctx.supabase.from("products").update({ status: "processing" }).eq("id", product.id).eq("organization_id", org), "Update product");
+    }
+    await audit({
+      organizationId: org,
+      actorId: ctx.userId,
+      action: "photo_session.created",
+      entityType: "product",
+      entityId: product.id,
+      metadata: { batchId, jobs: rows.length, created, locations: req.locations, randomModel: Boolean(persona) },
+    });
+    revalidatePath("/");
+    revalidatePath("/jobs");
     return { batchId: rows[0]?.batch_id ?? batchId, jobCount: rows.length, created };
   });
 }

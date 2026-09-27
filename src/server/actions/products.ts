@@ -362,3 +362,31 @@ export async function ensureProductsForSkus(skus: string[]): Promise<ActionResul
     return map;
   });
 }
+
+const quickProductSchema = z.object({ title: z.string().trim().max(200).optional() });
+
+/**
+ * Creates a product on the fly when a garment photo is dropped into the
+ * create composer. The SKU is generated and can be edited later.
+ */
+export async function quickCreateProduct(input: z.input<typeof quickProductSchema>): Promise<ActionResult<{ id: string; sku: string }>> {
+  return runAction("quickCreateProduct", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("mutate", ctx.userId);
+    const { title } = quickProductSchema.parse(input);
+    const { d } = await getI18n();
+    const date = new Date().toISOString().slice(2, 10).replaceAll("-", "");
+    const sku = `LOOK-${date}-${randomUUID().slice(0, 5).toUpperCase()}`;
+    const row = check(
+      await ctx.supabase
+        .from("products")
+        .insert({ sku, title: title || d.create.newGarment, organization_id: ctx.org.organizationId, created_by: ctx.userId })
+        .select("id")
+        .single(),
+      "Create product",
+    ) as { id: string };
+    await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "product.created", entityType: "product", entityId: row.id, metadata: { sku, quick: true } });
+    revalidatePath("/products");
+    return { id: row.id, sku };
+  });
+}

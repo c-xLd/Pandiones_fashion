@@ -53,6 +53,7 @@ export const imageGenerationHandler: JobHandler = {
       style: config.style,
       refs: labels,
       regenerationNote: config.regenerationNote,
+      modelPersona: profile ? null : config.modelPersona,
     });
 
     const provider = getImageProvider();
@@ -98,6 +99,8 @@ export const imageGenerationHandler: JobHandler = {
         settings: {
           style: config.style,
           presetId: config.presetId,
+          location: config.location,
+          modelPersona: config.modelPersona,
           productReferenceAssetIds: config.productReferenceAssetIds,
           modelReferenceAssetIds: config.modelReferenceAssetIds,
           finishReason: result.finishReason,

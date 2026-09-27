@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_SESSION_LOCATIONS, MAX_SESSION_SHOTS, SESSION_LOCATIONS } from "./photo-session";
 
 // ---------------------------------------------------------------------------
 // Shared enums
@@ -128,6 +129,20 @@ export const shootRequestSchema = z.object({
 });
 export type ShootRequest = z.infer<typeof shootRequestSchema>;
 
+/** One-click photo session: the server plans varied shots (see photo-session.ts). */
+export const photoSessionRequestSchema = z.object({
+  productId: z.uuid(),
+  /** null + randomModel=true → fictional model; null + false → generic model. */
+  modelProfileId: z.uuid().nullable(),
+  randomModel: z.boolean().default(true),
+  locations: z.array(z.enum(SESSION_LOCATIONS)).min(1, "selectLocation").max(MAX_SESSION_LOCATIONS),
+  count: z.coerce.number().int().min(1).max(MAX_SESSION_SHOTS),
+  aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
+  instructions: z.string().trim().max(1500).default(""),
+  idempotencyKey: z.string().min(8).max(100),
+});
+export type PhotoSessionRequest = z.input<typeof photoSessionRequestSchema>;
+
 /** Snapshot stored on each image_generation job. */
 export const imageJobConfigSchema = z.object({
   kind: z.literal("product_shot"),
@@ -139,6 +154,10 @@ export const imageJobConfigSchema = z.object({
   regenerationNote: z.string().max(2000).nullable().default(null),
   /** Language for AI-written free text (QC summaries); UI locale of the requester. */
   language: z.enum(["en", "tr"]).default("en"),
+  /** Fictional model description shared by every shot of a session (no profile). */
+  modelPersona: z.string().max(600).nullable().default(null),
+  /** Session location id, for display and filtering. */
+  location: z.string().max(40).nullable().default(null),
 });
 export type ImageJobConfig = z.infer<typeof imageJobConfigSchema>;
 

@@ -18,6 +18,8 @@ Jobs are rows in Postgres; *something* must call the worker regularly. Pick one 
    ```
 3. **Long-running process** — `npm run worker` on a VM/container (Railway, Fly.io, ECS…). Loops continuously; handles SIGTERM gracefully. Run several for more throughput.
 
+**Self-continuation:** every `/api/jobs/run` invocation checks, after its tick, whether work is still pending (queued jobs, retries waiting for backoff, video operations to poll). If so it re-triggers itself (after a 1–15s wait, via `after()` + `POST /api/jobs/run`). The chain stops by itself once the queue is empty, so a multi-photo session or a Veo video completes without a per-minute scheduler, even on Vercel Hobby. The create page also nudges the worker if queued jobs have waited more than 45s. Schedulers above remain the safety net if a chain breaks (e.g. a deploy mid-run).
+
 Additionally, after a user enqueues jobs the server makes a best-effort `POST /api/jobs/run` (via `after()`, needs `APP_URL` or `VERCEL_URL`) so work usually starts within seconds. This is only an accelerator: if it fails, the scheduler picks the jobs up. If Vercel Deployment Protection is on for previews, the kick is blocked there; the scheduler still works.
 
 ## Monitoring

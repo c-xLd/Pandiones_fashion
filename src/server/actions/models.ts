@@ -1,6 +1,7 @@
 "use server";
 
 import { getI18n } from "@/lib/i18n/server";
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -271,5 +272,44 @@ export async function promoteResultToModelReference(resultId: string): Promise<A
     await audit({ organizationId: org, actorId: ctx.userId, action: "model_asset.promoted", entityType: "generation_result", entityId: result.id });
     revalidatePath(`/models/${result.model_profile_id}`);
     return undefined;
+  });
+}
+
+const quickModelSchema = z.object({
+  adultConfirmed: z.literal(true),
+  consentConfirmed: z.literal(true),
+});
+
+/**
+ * Creates a model profile when a model photo is uploaded from the create
+ * composer. The uploader must confirm the person is an adult and consented.
+ */
+export async function quickCreateModel(input: z.input<typeof quickModelSchema>): Promise<ActionResult<{ id: string; name: string }>> {
+  return runAction("quickCreateModel", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("mutate", ctx.userId);
+    quickModelSchema.parse(input);
+    const suffix = randomUUID().slice(0, 4).toUpperCase();
+    const name = `Model ${suffix}`;
+    const row = check(
+      await ctx.supabase
+        .from("model_profiles")
+        .insert({
+          code: `M-${suffix}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          display_name: name,
+          appearance: {},
+          status: "active",
+          adult_confirmed: true,
+          consent_notes: `Uploader confirmed adult (18+) and consent to use the likeness (studio composer, ${new Date().toISOString()}).`,
+          organization_id: ctx.org.organizationId,
+          created_by: ctx.userId,
+        })
+        .select("id")
+        .single(),
+      "Create model profile",
+    ) as { id: string };
+    await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "model_profile.created", entityType: "model_profile", entityId: row.id, metadata: { quick: true } });
+    revalidatePath("/models");
+    return { id: row.id, name };
   });
 }

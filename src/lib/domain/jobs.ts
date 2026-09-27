@@ -102,3 +102,16 @@ export function sanitizeErrorMessage(message: string): string {
     .replace(/sb_(secret|publishable)_[A-Za-z0-9_\-]+/g, "[redacted-key]")
     .slice(0, 1000);
 }
+
+/**
+ * Delay before a worker invocation re-triggers itself while work is pending
+ * (queued jobs, retries waiting for backoff, video operations to poll).
+ * Clamped so a chain of invocations stays cheap but responsive, and never
+ * sleeps past the invocation's remaining time.
+ */
+export function continuationDelayMs(nextDueAt: number, now: number, remainingMs: number): number {
+  const MIN = 1_000;
+  const MAX = 15_000;
+  const wanted = Math.min(MAX, Math.max(MIN, nextDueAt - now));
+  return Math.max(0, Math.min(wanted, remainingMs - 5_000));
+}

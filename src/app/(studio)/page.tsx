@@ -1,15 +1,17 @@
 import Link from "next/link";
+import { after } from "next/server";
+import { kickWorker } from "@/server/jobs/kick";
 import { AlertTriangle, Clapperboard, Loader2 } from "lucide-react";
 import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { budgetState } from "@/lib/domain/costs";
-import { geminiConfig, isGeminiConfigured } from "@/lib/env";
+import { isGeminiConfigured } from "@/lib/env";
 import { formatMoney, cn } from "@/lib/utils";
 import { getI18n } from "@/lib/i18n/server";
 import { pageMetadata } from "@/lib/i18n/metadata";
 import { fmt } from "@/lib/i18n/config";
 import { jobErrorLabel, shotLabel } from "@/lib/i18n/labels";
-import type { ShootStyle } from "@/lib/domain/schemas";
+import type { SessionLocation } from "@/lib/domain/photo-session";
 import type { JobRow, ResultRow } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { QcBadge, StatusBadge } from "@/components/studio/status-badge";
@@ -40,7 +42,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   let results = db.from("generation_results").select("*, products(sku)").eq("organization_id", org).order("created_at", { ascending: false }).limit(GALLERY_LIMIT);
   if (kind) results = results.eq("kind", kind);
 
-  const [resultsRes, activeRes, failedRes, pendingReview, productsRes, modelsRes, presetsRes, orgRow, spend] = await Promise.all([
+  const [resultsRes, activeRes, failedRes, pendingReview, productsRes, modelsRes, orgRow, spend] = await Promise.all([
     results,
     db
       .from("generation_jobs")
@@ -72,9 +74,6 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
     canEdit
       ? db.from("model_profiles").select("id, display_name, model_profile_assets(id, is_primary, thumbnail_path)").eq("organization_id", org).neq("status", "retired").order("display_name")
       : Promise.resolve({ data: [] }),
-    canEdit
-      ? db.from("shoot_presets").select("id, name, category, config").or(`organization_id.is.null,organization_id.eq.${org}`).order("category").order("name")
-      : Promise.resolve({ data: [] }),
     db.from("organizations").select("monthly_budget_usd, budget_alert_percent").eq("id", org).single(),
     db.rpc("org_month_spend", { p_org: org }),
   ]);
@@ -84,6 +83,12 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   const active = (activeRes.data ?? []) as unknown as Joined<Pick<JobRow, "id" | "job_type" | "status" | "progress" | "config" | "created_at">>[];
   const failed = (failedRes.data ?? []) as unknown as Joined<Pick<JobRow, "id" | "job_type" | "error_code" | "config" | "created_at">>[];
 
+  // Safety net: if queued work has been waiting, nudge the worker (cheap, idempotent).
+  const STALE_QUEUE_MS = 45_000;
+  if (active.some((j) => j.status === "queued" && Date.now() - Date.parse(j.created_at) > STALE_QUEUE_MS)) {
+    after(() => kickWorker());
+  }
+
   type ProductWithAssets = { id: string; sku: string; title: string; product_assets: { id: string; role: string; thumbnail_path: string | null; created_at: string }[] };
   type ModelWithAssets = { id: string; display_name: string; model_profile_assets: { id: string; is_primary: boolean; thumbnail_path: string | null }[] };
   const ROLE_ORDER = ["front", "side", "back", "detail", "fabric", "other"];
@@ -92,7 +97,6 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
     product_assets: [...p.product_assets].sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.created_at.localeCompare(b.created_at)),
   }));
   const models = (modelsRes.data ?? []) as ModelWithAssets[];
-  const presets = (presetsRes.data ?? []) as { id: string; name: string; category: string; config: Partial<ShootStyle> }[];
   const modelPrimary = (m: ModelWithAssets) => m.model_profile_assets.find((a) => a.is_primary) ?? m.model_profile_assets[0];
 
   const urls = await signUrls(db, [
@@ -108,14 +112,16 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   const money = (v: number | null) => formatMoney(v, "USD", 2, locale);
 
   let disabledReason: string | null = null;
-  let maxReferences = 6;
   if (!canEdit) disabledReason = t.readOnly;
   else if (!isGeminiConfigured()) disabledReason = d.shoot.geminiMissing;
-  else maxReferences = geminiConfig().maxReferenceImages;
 
   const jobAspect = (config: Record<string, unknown>, jobType: string) => {
     const style = (config.style ?? {}) as Record<string, unknown>;
     return cssAspect(style.aspectRatio ?? config.aspectRatio, jobType === "video_generation" ? "16/9" : "3/4");
+  };
+  const locationLabel = (config: Record<string, unknown>) => {
+    const loc = config.location as SessionLocation | undefined;
+    return loc && loc in t.locationNames ? t.locationNames[loc] : null;
   };
   const isEmpty = rows.length === 0 && active.length === 0 && failed.length === 0;
 
@@ -212,7 +218,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                       {j.job_type === "video_generation" ? <Clapperboard className="h-5 w-5 text-muted-foreground" /> : <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
                       <span className="text-sm font-medium">{j.status === "queued" ? t.queued : t.generating}</span>
                       <span className="text-xs text-muted-foreground">
-                        {[j.products?.sku, shotLabel(d, ((j.config.style ?? {}) as { shotType?: string }).shotType)].filter(Boolean).join(" · ")}
+                        {[shotLabel(d, ((j.config.style ?? {}) as { shotType?: string }).shotType), locationLabel(j.config)].filter(Boolean).join(" · ")}
                       </span>
                       {j.status === "processing" && j.progress > 0 && (
                         <span className="absolute inset-x-4 bottom-4 h-1 overflow-hidden rounded-full bg-white/10">
@@ -235,7 +241,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                   </Link>
                 ))}
               {rows.map((r) => {
-                const title = [r.products?.sku, shotLabel(d, r.shot_type)].filter(Boolean).join(" · ") || d.enums.mediaKind[r.kind];
+                const title = [shotLabel(d, r.shot_type), locationLabel(r.settings)].filter(Boolean).join(" · ") || d.enums.mediaKind[r.kind];
                 return (
                   <MediaTile
                     key={r.id}
@@ -245,7 +251,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                     alt={title}
                     aspect={r.width && r.height ? `${r.width}/${r.height}` : r.kind === "video" ? "16/9" : "3/4"}
                     title={title}
-                    subtitle={new Date(r.created_at).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}
+                    subtitle={[r.products?.sku, new Date(r.created_at).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })].filter(Boolean).join(" · ")}
                     badges={
                       <>
                         <StatusBadge status={r.review_status} />
@@ -273,16 +279,13 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
           sku: p.sku,
           title: p.title,
           thumb: signed(p.product_assets[0]?.thumbnail_path),
-          assetIds: p.product_assets.map((a) => a.id),
+          hasAssets: p.product_assets.length > 0,
         }))}
         models={models.map((m) => ({
           id: m.id,
           name: m.display_name,
           thumb: signed(modelPrimary(m)?.thumbnail_path),
-          primaryAssetIds: modelPrimary(m) ? [modelPrimary(m)!.id] : [],
         }))}
-        presets={presets}
-        maxReferences={maxReferences}
         disabledReason={disabledReason}
       />
     </div>

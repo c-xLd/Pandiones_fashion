@@ -163,3 +163,18 @@ export async function runWorkerTick(opts: { timeBudgetMs?: number; workerId?: st
   summary.durationMs = Date.now() - started;
   return summary;
 }
+
+/**
+ * Epoch ms at which the next pending job becomes runnable, or null when the
+ * queue has nothing left to do.
+ */
+export async function nextDueAt(admin = getSupabaseAdmin()): Promise<number | null> {
+  const [queued, processing] = await Promise.all([
+    admin.from("generation_jobs").select("run_after").eq("status", "queued").order("run_after").limit(1),
+    admin.from("generation_jobs").select("locked_until").eq("status", "processing").order("locked_until").limit(1),
+  ]);
+  const times = [queued.data?.[0]?.run_after, processing.data?.[0]?.locked_until]
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => Date.parse(v));
+  return times.length ? Math.min(...times) : null;
+}

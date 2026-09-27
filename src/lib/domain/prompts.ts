@@ -107,7 +107,15 @@ export function buildCreativeDirection(style: ShootStyle): string {
   return lines.join("\n");
 }
 
-export function buildModelDirection(model: ModelContext | null, refs: ReferenceImageLabel[]): string {
+export function buildModelDirection(model: ModelContext | null, refs: ReferenceImageLabel[], persona?: string | null): string {
+  if (!model && persona) {
+    return [
+      "MODEL:",
+      `- A fictional, photorealistic adult fashion model (21+) suited to the garment: ${persona}.`,
+      "- This is the same person in every image of this photo session: keep face, hair and body consistent with this description.",
+      "- Do not resemble any real or famous person.",
+    ].join("\n");
+  }
   if (!model) {
     return "MODEL:\n- A photorealistic adult fashion model (21+) with a natural, professional look.";
   }
@@ -135,11 +143,12 @@ export function buildProductShotPrompt(input: {
   style: ShootStyle;
   refs: ReferenceImageLabel[];
   regenerationNote?: string | null;
+  modelPersona?: string | null;
 }): string {
   const sections = [
     "Create one photorealistic fashion e-commerce photograph.",
     buildProductConstraints(input.product, input.refs),
-    buildModelDirection(input.model, input.refs),
+    buildModelDirection(input.model, input.refs, input.modelPersona),
     buildCreativeDirection(input.style),
   ];
   if (input.regenerationNote) {
