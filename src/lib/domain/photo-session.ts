@@ -79,8 +79,12 @@ const ANGLES = [
   "eye level with a slightly off-centre composition",
 ] as const;
 
-/** Commerce-first order: the essential views come first, then variety. */
-const SHOT_SEQUENCE: ShotType[] = ["front", "three_quarter", "back", "detail", "side", "front", "three_quarter", "front", "back", "three_quarter", "side", "front"];
+/**
+ * Commerce-first order: the essential views come first, then variety.
+ * Back views are paused for now (they often need a dedicated back reference
+ * photo to be accurate); single shoots can still request them.
+ */
+const SHOT_SEQUENCE: ShotType[] = ["front", "three_quarter", "detail", "side", "front", "three_quarter", "front", "side", "three_quarter", "front", "detail", "three_quarter"];
 
 export interface PlannedShot {
   shotType: ShotType;

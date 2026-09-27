@@ -12,37 +12,87 @@ const REENCODE_ABOVE_BYTES = 3 * 1024 * 1024;
 
 export class UnreadableFileError extends Error {}
 
+/** True when the browser can read the file's bytes (cloud-only files cannot). */
+async function isReadable(file: File): Promise<boolean> {
+  try {
+    await file.slice(0, 64).arrayBuffer();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function jpegName(name: string): string {
+  return name.replace(/\.[^.]+$/, "") + ".jpg";
+}
+
+/** Draw a decoded image onto a canvas at most MAX_UPLOAD_EDGE long and encode it as JPEG. */
+async function encodeScaled(source: CanvasImageSource, width: number, height: number, name: string): Promise<File | null> {
+  const scale = Math.min(1, MAX_UPLOAD_EDGE / Math.max(width, height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+  return blob ? new File([blob], jpegName(name), { type: "image/jpeg" }) : null;
+}
+
+/** Fallback decoder for devices where createImageBitmap fails (e.g. low memory). */
+async function decodeWithImageElement(file: File): Promise<File | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return await encodeScaled(img, img.naturalWidth, img.naturalHeight, file.name);
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /**
- * Read the photo in the browser before uploading. This fails fast (with a
- * clear error) for files the browser cannot read, e.g. cloud-only photos
- * picked on Android, and shrinks large camera photos so uploads on mobile
- * networks are small and reliable. EXIF orientation is applied.
+ * Read the photo in the browser before uploading and shrink large camera
+ * photos so uploads on mobile networks are small and reliable (EXIF
+ * orientation applied). Decoding falls back from a full decode, to a
+ * browser-side downscaled decode, to an <img> element; if the bytes are
+ * readable but no decoder works (low-memory phones), the original is sent
+ * and validated by the server. Only files whose bytes cannot be read at all
+ * (e.g. cloud-only photos on Android) are rejected here.
  */
 export async function prepareImageForUpload(file: File): Promise<File> {
-  let bitmap: ImageBitmap;
+  if (!(await isReadable(file))) throw new UnreadableFileError(file.name);
+
+  let bitmap: ImageBitmap | null = null;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   } catch {
-    throw new UnreadableFileError(file.name);
+    try {
+      // Let the browser decode at a reduced size (lower memory on large photos).
+      bitmap = await createImageBitmap(file, { imageOrientation: "from-image", resizeWidth: MAX_UPLOAD_EDGE, resizeQuality: "high" });
+    } catch {
+      bitmap = null;
+    }
   }
-  try {
-    const longest = Math.max(bitmap.width, bitmap.height);
-    if (longest <= MAX_UPLOAD_EDGE && file.size <= REENCODE_ABOVE_BYTES) return file;
-    const scale = Math.min(1, MAX_UPLOAD_EDGE / longest);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    const context = canvas.getContext("2d");
-    if (!context) return file;
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-    if (!blob) return file;
-    // Re-encoding only for size must actually make the file smaller.
-    if (scale === 1 && blob.size >= file.size) return file;
-    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
-  } finally {
-    bitmap.close();
+
+  if (bitmap) {
+    try {
+      const longest = Math.max(bitmap.width, bitmap.height);
+      if (longest <= MAX_UPLOAD_EDGE && file.size <= REENCODE_ABOVE_BYTES) return file;
+      const encoded = await encodeScaled(bitmap, bitmap.width, bitmap.height, file.name);
+      if (!encoded) return file;
+      // Re-encoding only for size must actually make the file smaller.
+      if (longest <= MAX_UPLOAD_EDGE && encoded.size >= file.size) return file;
+      return encoded;
+    } finally {
+      bitmap.close();
+    }
   }
+
+  return (await decodeWithImageElement(file)) ?? file;
 }
 
 /**
