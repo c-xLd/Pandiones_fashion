@@ -64,6 +64,11 @@ export function classifyError(error: unknown): { classification: ErrorClass; cod
     const e = error as { name?: string; status?: unknown; code?: unknown; message?: unknown };
     if (e.name === "AbortError") return { classification: "transient", code: "timeout" };
     if (typeof e.status === "number") {
+      // A quota of 0 (e.g. image models on the free tier without billing) will
+      // never succeed on retry: fail fast with an actionable code.
+      if (e.status === 429 && typeof e.message === "string" && /limit:\s*0\b/.test(e.message)) {
+        return { classification: "permanent", code: "quota_billing", status: e.status };
+      }
       return { classification: classifyHttpStatus(e.status), code: `http_${e.status}`, status: e.status };
     }
     const msg = typeof e.message === "string" ? e.message : "";

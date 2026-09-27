@@ -101,3 +101,13 @@ describe("worker outcome -> job patch", () => {
     expect(d.patch.locked_until).toBe("2026-09-27T12:00:30.000Z");
   });
 });
+
+describe("quota classification", () => {
+  it("fails fast when the provider quota is zero (billing not enabled)", async () => {
+    const { classifyError } = await import("@/lib/domain/jobs");
+    const zero = Object.assign(new Error("Quota exceeded for metric: generate_content_free_tier_requests, limit: 0, model: gemini-3-pro-image"), { status: 429 });
+    expect(classifyError(zero)).toEqual({ classification: "permanent", code: "quota_billing", status: 429 });
+    const rate = Object.assign(new Error("Resource has been exhausted (e.g. check quota)."), { status: 429 });
+    expect(classifyError(rate)).toEqual({ classification: "transient", code: "http_429", status: 429 });
+  });
+});

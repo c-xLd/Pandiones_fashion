@@ -927,6 +927,7 @@ export const en = {
     no_operation: "The video provider did not start an operation.",
     timeout: "The provider request timed out.",
     network: "Network error while calling the provider.",
+    quota_billing: "The provider account has no quota for this model (limit 0). Enable billing for the Gemini API key's Google project, then retry.",
     http_429: "Provider rate limit or quota reached.",
     http_400: "The provider rejected the request.",
     http_401: "The provider rejected the API key.",

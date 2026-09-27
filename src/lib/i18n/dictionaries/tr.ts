@@ -925,6 +925,7 @@ export const tr: typeof en = {
     no_operation: "Video sağlayıcısı bir işlem başlatmadı.",
     timeout: "Sağlayıcı isteği zaman aşımına uğradı.",
     network: "Sağlayıcı çağrılırken ağ hatası oluştu.",
+    quota_billing: "Sağlayıcı hesabının bu model için kotası yok (limit 0). Gemini API anahtarının bağlı olduğu Google projesinde faturalandırmayı açın, sonra tekrar deneyin.",
     http_429: "Sağlayıcı hız sınırına veya kotasına ulaşıldı.",
     http_400: "Sağlayıcı isteği reddetti.",
     http_401: "Sağlayıcı API anahtarını reddetti.",
