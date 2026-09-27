@@ -1,15 +1,15 @@
 "use client";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ArrowUp, Check, ChevronDown, Dices, ImagePlus, Layers, Loader2, MapPin, Ratio, Shirt, Upload, UserRound } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Dices, ImagePlus, Layers, Loader2, MapPin, Ratio, RefreshCw, Shirt, Sparkles, Upload, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IMAGE_ASPECT_RATIOS, type ImageAspectRatio } from "@/lib/domain/schemas";
 import { SESSION_LOCATIONS, SESSION_SHOT_COUNTS, MAX_SESSION_LOCATIONS, type SessionLocation } from "@/lib/domain/photo-session";
 import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
 import { createPhotoSession } from "@/server/actions/generation";
 import { discardEmptyProduct, quickCreateProduct } from "@/server/actions/products";
-import { discardEmptyModel, quickCreateModel } from "@/server/actions/models";
+import { castRandomModel, discardCastModel, discardEmptyModel, quickCreateModel } from "@/server/actions/models";
 import { uploadFile } from "@/components/studio/upload-client";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,9 @@ export interface ComposerProps {
 }
 
 const MAX_GARMENT_FILES = 4;
+/** Poll for a cast model's portrait; give up after this long. */
+const CAST_POLL_MS = 4_000;
+const CAST_TIMEOUT_MS = 4 * 60_000;
 const DEFAULT_LOCATIONS: SessionLocation[] = ["studio_white", "city_street"];
 
 type LocalProduct = ComposerProps["products"][number];
@@ -55,6 +58,10 @@ export function Composer({ products, models, disabledReason, initialProductId, i
   const [count, setCount] = useState<number>(6);
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("3:4");
   const [prompt, setPrompt] = useState("");
+  const [quality, setQuality] = useState<"2K" | "4K">("2K");
+  // Casting: a new random model whose portrait is being generated / previewed.
+  const [casting, setCasting] = useState<{ modelId: string; startedAt: number; dismissed: boolean } | null>(null);
+  const [castBusy, setCastBusy] = useState(false);
   const [uploading, setUploading] = useState<"garment" | "model" | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
   const [adultOk, setAdultOk] = useState(false);
@@ -66,12 +73,49 @@ export function Composer({ products, models, disabledReason, initialProductId, i
   const product = allProducts.find((p) => p.id === productId);
   const model = allModels.find((m) => m.id === modelId);
 
+  const castModel = casting ? models.find((m) => m.id === casting.modelId) : undefined;
+  const castReady = Boolean(castModel?.thumb);
+  const castWaiting = Boolean(casting && !castReady);
+
+  // Refresh server data until the cast portrait arrives (or give up).
+  useEffect(() => {
+    if (!casting || castReady) return;
+    const id = setInterval(() => {
+      if (Date.now() - casting.startedAt > CAST_TIMEOUT_MS) {
+        setCasting(null);
+        setModelId("");
+        setError(t.castFailed);
+        return;
+      }
+      router.refresh();
+    }, CAST_POLL_MS);
+    return () => clearInterval(id);
+  }, [casting, castReady, router, t.castFailed]);
+
+  async function cast(replace?: string) {
+    setError(null);
+    setNotice(null);
+    setCastBusy(true);
+    try {
+      if (replace) await discardCastModel(replace);
+      const res = await castRandomModel({ idempotencyKey: crypto.randomUUID() });
+      if (!res.ok) return setError(res.error);
+      setLocalModels((prev) => [{ id: res.data.modelId, name: res.data.name, thumb: null }, ...prev.filter((m) => m.id !== replace)]);
+      setModelId(res.data.modelId);
+      setCasting({ modelId: res.data.modelId, startedAt: Date.now(), dismissed: false });
+      router.refresh();
+    } finally {
+      setCastBusy(false);
+    }
+  }
+
   const blocking = useMemo(() => {
     if (disabledReason) return disabledReason;
+    if (castWaiting && modelId === casting?.modelId) return t.waitCasting;
     if (!product || !product.hasAssets) return t.needGarment;
     if (!locations.length) return t.needLocation;
     return null;
-  }, [disabledReason, product, locations.length, t]);
+  }, [disabledReason, product, locations.length, t, castWaiting, modelId, casting?.modelId]);
 
   const locationName = (l: SessionLocation) => t.locationNames[l];
   const uploadError = d.uploader.uploadFailed;
@@ -151,6 +195,7 @@ export function Composer({ products, models, disabledReason, initialProductId, i
         locations,
         count,
         aspectRatio,
+        imageSize: quality,
         instructions: prompt.trim(),
         idempotencyKey,
       });
@@ -167,6 +212,39 @@ export function Composer({ products, models, disabledReason, initialProductId, i
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-3 sm:px-4 sm:pb-5">
       <div className="pointer-events-auto mx-auto max-w-3xl">
+        {casting && !casting.dismissed && (
+          <div className="mb-2 flex items-center gap-3 rounded-3xl border bg-card/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl">
+            {castReady && castModel?.thumb ? (
+              <img src={castModel.thumb} alt={castModel.name} className="flow-drop h-40 w-30 shrink-0 rounded-2xl object-cover sm:h-48 sm:w-36" />
+            ) : (
+              <div className="flow-shimmer flex h-40 w-30 shrink-0 items-center justify-center rounded-2xl border sm:h-48 sm:w-36">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="font-medium">{castReady ? t.castReady : t.casting}</p>
+              <p className="text-xs text-muted-foreground">{castReady ? castModel?.name : t.castHint}</p>
+              {castReady && (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => setCasting((c) => (c ? { ...c, dismissed: true } : c))}>
+                    <Check /> {t.useThisModel}
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={castBusy} onClick={() => void cast(casting.modelId)}>
+                    {castBusy ? <Loader2 className="animate-spin" /> : <RefreshCw />} {t.anotherModel}
+                  </Button>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              aria-label={d.common.cancel}
+              onClick={() => setCasting((c) => (c ? { ...c, dismissed: true } : c))}
+              className="self-start rounded-full p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         {(notice || error) && (
           <p
             role={error ? "alert" : "status"}
@@ -216,12 +294,21 @@ export function Composer({ products, models, disabledReason, initialProductId, i
             </Chooser>
 
             <Chooser
-              icon={uploading === "model" ? <Loader2 className="animate-spin" /> : model ? <UserRound /> : <Dices />}
-              label={uploading === "model" ? t.uploading : model ? model.name : t.randomModel}
+              icon={uploading === "model" || castWaiting ? <Loader2 className="animate-spin" /> : model ? <UserRound /> : <Dices />}
+              label={uploading === "model" ? t.uploading : castWaiting && modelId === casting?.modelId ? t.casting : model ? model.name : t.randomModel}
               thumb={uploading === "model" ? null : model?.thumb}
               ariaLabel={t.model}
               disabled={uploading !== null}
             >
+              <Menu.Item className={itemClass} disabled={castBusy || Boolean(disabledReason)} onSelect={() => void cast()}>
+                <span className="flow-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white">
+                  {castBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block">{t.castModel}</span>
+                  <span className="block text-xs text-muted-foreground">{t.castModelHint}</span>
+                </span>
+              </Menu.Item>
               <Menu.Item className={itemClass} onSelect={() => setModelId("")}>
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                   <Dices className="h-4 w-4" />
@@ -306,6 +393,17 @@ export function Composer({ products, models, disabledReason, initialProductId, i
                 <Menu.Item key={r} className={itemClass} onSelect={() => setAspectRatio(r)}>
                   <span className="flex-1">{r}</span>
                   {r === aspectRatio && <Check className="h-4 w-4" />}
+                </Menu.Item>
+              ))}
+            </Chooser>
+            <Chooser icon={<Sparkles />} label={quality} ariaLabel={t.quality} compact>
+              {(["2K", "4K"] as const).map((q) => (
+                <Menu.Item key={q} className={itemClass} onSelect={() => setQuality(q)}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block">{q}</span>
+                    <span className="block text-xs text-muted-foreground">{q === "2K" ? t.quality2kHint : t.quality4kHint}</span>
+                  </span>
+                  {q === quality && <Check className="h-4 w-4" />}
                 </Menu.Item>
               ))}
             </Chooser>

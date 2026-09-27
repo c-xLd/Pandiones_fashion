@@ -138,6 +138,8 @@ export const photoSessionRequestSchema = z.object({
   locations: z.array(z.enum(SESSION_LOCATIONS)).min(1, "selectLocation").max(MAX_SESSION_LOCATIONS),
   count: z.coerce.number().int().min(1).max(MAX_SESSION_SHOTS),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
+  /** 2K is generated natively; 4K is the 2K output upscaled when the model cannot produce 4K. */
+  imageSize: z.enum(["2K", "4K"]).default("2K"),
   instructions: z.string().trim().max(1500).default(""),
   idempotencyKey: z.string().min(8).max(100),
 });
@@ -167,6 +169,8 @@ export const modelPortraitJobConfigSchema = z.object({
   imageSize: z.enum(IMAGE_SIZES).default("1K"),
   instructions: z.string().max(2000).default(""),
   modelReferenceAssetIds: z.array(z.uuid()).default([]),
+  /** Casting: save the portrait as the profile's primary identity reference. */
+  useAsReference: z.boolean().default(false),
 });
 export type ModelPortraitJobConfig = z.infer<typeof modelPortraitJobConfigSchema>;
 

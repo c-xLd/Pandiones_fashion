@@ -149,3 +149,38 @@ describe("CloudflareFluxImageProvider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("2K / 4K output", () => {
+  it("requests the model's maximum (1920 px long edge) for 2K and 4K", () => {
+    expect(fluxDimensions("3:4", "2K")).toEqual({ width: 1440, height: 1920 });
+    expect(fluxDimensions("3:4", "4K")).toEqual({ width: 1440, height: 1920 });
+  });
+
+  it("upscales 4K requests to a 3840 px long edge and leaves 2K untouched", async () => {
+    const { upscaleIfNeeded } = await import("@/server/jobs/handlers/shared");
+    const img = { data: await png(1440, 1920), mimeType: "image/png" };
+    const twoK = await upscaleIfNeeded(img, "2K");
+    expect(twoK.upscaled).toBe(false);
+    const fourK = await upscaleIfNeeded(img, "4K");
+    expect(fourK.upscaled).toBe(true);
+    const meta = await sharp(fourK.image.data).metadata();
+    expect([meta.width, meta.height]).toEqual([2880, 3840]);
+    expect(fourK.image.mimeType).toBe("image/jpeg");
+    const native = await upscaleIfNeeded({ data: await png(3000, 4000), mimeType: "image/png" }, "4K");
+    expect(native.upscaled).toBe(false);
+  });
+});
+
+describe("realism cues", () => {
+  it("are part of product and portrait prompts", async () => {
+    const { REALISM, buildModelPortraitPrompt } = await import("@/lib/domain/prompts");
+    const portrait = buildModelPortraitPrompt(
+      { code: "AI-1", displayName: "Model 1", description: "a beautiful professional female fashion model, age late 20s", appearance: {}, stylingNotes: null, preferredLighting: null, photographyStyle: null },
+      "",
+      false,
+    );
+    expect(portrait).toContain(REALISM);
+    expect(portrait).toContain("front view facing the camera");
+    expect(portrait).toContain("21+");
+  });
+});

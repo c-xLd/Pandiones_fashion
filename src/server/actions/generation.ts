@@ -207,7 +207,7 @@ export async function createPhotoSession(
           background: shot.background,
           lighting: shot.lighting,
           aspectRatio: req.aspectRatio,
-          imageSize: "1K",
+          imageSize: req.imageSize,
           variations: 1,
           creativeInstructions: req.instructions,
         }),

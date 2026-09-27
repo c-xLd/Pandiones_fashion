@@ -8,6 +8,7 @@ import { z } from "zod";
 import { IMAGE_ASPECT_RATIOS, IMAGE_SIZES, modelProfileInputSchema } from "@/lib/domain/schemas";
 import { imageGenerationConfig } from "@/lib/env";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { randomModelPersona } from "@/lib/domain/photo-session";
 import type { ActionResult, ModelAssetRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
 import { UserFacingError, check, runAction, toActionError } from "../action";
@@ -406,5 +407,86 @@ export async function saveResultAsModel(input: z.input<typeof saveResultModelSch
     revalidatePath("/models");
     revalidatePath("/");
     return { id: profile.id, name };
+  });
+}
+
+const castSchema = z.object({ idempotencyKey: z.string().min(8).max(100) });
+
+/**
+ * Casting a random model: creates a fictional (adult) model profile from a
+ * random persona and queues a front-facing portrait that becomes its primary
+ * identity reference, so the user sees the model before shooting and every
+ * photo keeps the same face.
+ */
+export async function castRandomModel(input: z.input<typeof castSchema>): Promise<ActionResult<{ modelId: string; name: string; jobId: string }>> {
+  return runAction("castRandomModel", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("generate", ctx.userId);
+    const data = castSchema.parse(input);
+    const cfg = imageGenerationConfig();
+    const org = ctx.org.organizationId;
+    const suffix = randomUUID().slice(0, 4).toUpperCase();
+    const name = `Model ${suffix}`;
+    const persona = randomModelPersona(data.idempotencyKey);
+    const profile = check(
+      await ctx.supabase
+        .from("model_profiles")
+        .insert({
+          code: `AI-${suffix}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          display_name: name,
+          description: persona,
+          appearance: {},
+          status: "draft",
+          // Fictional AI model; every generation prompt requires an adult (21+).
+          adult_confirmed: true,
+          consent_notes: "Fictional AI-generated model (random casting).",
+          organization_id: org,
+          created_by: ctx.userId,
+        })
+        .select("id")
+        .single(),
+      "Create model profile",
+    ) as { id: string };
+    const { jobs } = await enqueueJobs(ctx, [
+      {
+        jobType: "model_portrait",
+        provider: cfg.provider,
+        model: cfg.model,
+        idempotencyKey: `cast:${data.idempotencyKey}`,
+        modelProfileId: profile.id,
+        inputAssetRefs: [],
+        config: {
+          kind: "model_portrait",
+          aspectRatio: "3:4",
+          imageSize: "2K",
+          instructions: "",
+          modelReferenceAssetIds: [],
+          useAsReference: true,
+        },
+      },
+    ]);
+    await audit({ organizationId: org, actorId: ctx.userId, action: "model_profile.cast", entityType: "model_profile", entityId: profile.id });
+    revalidatePath("/");
+    return { modelId: profile.id, name, jobId: jobs[0]?.id ?? "" };
+  });
+}
+
+/** Retire a cast model the user did not keep (only their own draft/new casts). */
+export async function discardCastModel(modelId: string): Promise<ActionResult> {
+  return runAction("discardCastModel", async () => {
+    const ctx = await requireOrgContext("editor");
+    const id = z.uuid().parse(modelId);
+    check(
+      await ctx.supabase
+        .from("model_profiles")
+        .update({ status: "retired" })
+        .eq("id", id)
+        .eq("organization_id", ctx.org.organizationId)
+        .eq("created_by", ctx.userId)
+        .like("code", "AI-%"),
+      "Retire model",
+    );
+    revalidatePath("/");
+    return undefined;
   });
 }

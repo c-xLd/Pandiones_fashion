@@ -6,7 +6,7 @@ import type { TokenUsage } from "@/lib/domain/costs";
 import { getImageProvider } from "@/lib/providers/registry";
 import type { JobHandler } from "../worker";
 import { recordUsage, tokenCost } from "../usage";
-import { downloadReferences, loadModelAssets, loadModelProfile, modelContext, permanent, storeGeneratedImage } from "./shared";
+import { downloadReferences, loadModelAssets, loadModelProfile, modelContext, permanent, saveCastingReference, storeGeneratedImage } from "./shared";
 
 /** Generates a reference portrait for a model profile (casting / identity). */
 export const modelPortraitHandler: JobHandler = {
@@ -62,7 +62,7 @@ export const modelPortraitHandler: JobHandler = {
     }
     const first = result.images[0];
     if (first) {
-      await storeGeneratedImage(ctx.admin, job, first, {
+      const saved = await storeGeneratedImage(ctx.admin, job, first, {
         model_profile_id: profile.id,
         shot_type: "portrait",
         prompt,
@@ -71,6 +71,7 @@ export const modelPortraitHandler: JobHandler = {
         model: result.resolvedModel ?? result.model,
         provider_text: result.text,
       });
+      if (config.useAsReference) await saveCastingReference(ctx.admin, job, profile.id, first, saved.id);
     }
     return { status: "succeeded", requestId: result.requestId };
   },

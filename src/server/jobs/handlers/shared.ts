@@ -165,3 +165,60 @@ export async function storeGeneratedImage(
   if (error) throw new Error(`Saving generation result failed: ${error.message}`);
   return data as ResultRow;
 }
+
+/** Long edge delivered for each requested size when the provider returns less. */
+const TARGET_LONG_EDGE: Record<string, number> = { "4K": 3840 };
+
+/**
+ * When a size is requested that the model cannot produce natively (e.g. 4K
+ * from a model capped near 2K), upscale with Lanczos resampling. This adds
+ * pixels, not detail; results record `upscaled: true`.
+ */
+export async function upscaleIfNeeded(image: BinaryImage, imageSize: string): Promise<{ image: BinaryImage; upscaled: boolean }> {
+  const target = TARGET_LONG_EDGE[imageSize];
+  if (!target) return { image, upscaled: false };
+  const meta = await sharp(image.data).metadata();
+  const longest = Math.max(meta.width ?? 0, meta.height ?? 0);
+  if (!longest || longest >= target * 0.9) return { image, upscaled: false };
+  const scale = target / longest;
+  const data = await sharp(image.data)
+    .resize({ width: Math.round((meta.width ?? 0) * scale), height: Math.round((meta.height ?? 0) * scale), kernel: "lanczos3" })
+    .sharpen({ sigma: 0.6 })
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toBuffer();
+  return { image: { data, mimeType: "image/jpeg" }, upscaled: true };
+}
+
+/**
+ * Casting: store a generated portrait as a model reference (primary when the
+ * profile has none) and activate the profile, so shoots keep this identity.
+ */
+export async function saveCastingReference(admin: SupabaseClient, job: JobRow, modelId: string, image: BinaryImage, resultId: string): Promise<void> {
+  const processed = await processImage(image.data, { enforceMinSize: false });
+  const dest = paths.modelSource(job.organization_id, modelId, processed.mimeType);
+  const thumb = paths.thumbnailFor(dest);
+  await uploadObject(dest, image.data, processed.mimeType);
+  await uploadObject(thumb, processed.thumbnail, "image/webp");
+  const { count } = await admin
+    .from("model_profile_assets")
+    .select("id", { count: "exact", head: true })
+    .eq("model_profile_id", modelId)
+    .eq("organization_id", job.organization_id);
+  const { error } = await admin.from("model_profile_assets").insert({
+    organization_id: job.organization_id,
+    model_profile_id: modelId,
+    storage_path: dest,
+    thumbnail_path: thumb,
+    mime_type: processed.mimeType,
+    size_bytes: processed.sizeBytes,
+    width: processed.width,
+    height: processed.height,
+    sha256: processed.sha256,
+    is_primary: (count ?? 0) === 0,
+    source: "generated",
+    source_result_id: resultId,
+    created_by: job.created_by,
+  });
+  if (error) throw new Error(`Saving casting reference failed: ${error.message}`);
+  await admin.from("model_profiles").update({ status: "active" }).eq("id", modelId).eq("organization_id", job.organization_id).eq("status", "draft");
+}

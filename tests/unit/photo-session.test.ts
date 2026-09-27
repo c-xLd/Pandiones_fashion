@@ -66,12 +66,13 @@ describe("planPhotoSession", () => {
 describe("random model persona", () => {
   it("is stable per seed and describes an adult", () => {
     expect(randomModelPersona("k")).toBe(randomModelPersona("k"));
-    expect(randomModelPersona("k")).toMatch(/^age (mid|late|early) (20s|30s)/);
+    expect(randomModelPersona("k")).toMatch(/^a beautiful professional female fashion model, age (mid|late|early) (20s|30s)/);
   });
 
   it("is used in the model direction only when there is no profile", () => {
     const text = buildModelDirection(null, [], "age late 20s, fair skin");
     expect(text).toContain("age late 20s, fair skin");
+    expect(randomModelPersona("x")).not.toBe(randomModelPersona("y"));
     expect(text).toContain("same person in every image");
     expect(text).toContain("21+");
     expect(buildModelDirection(null, [])).not.toContain("same person");
@@ -99,6 +100,8 @@ describe("photoSessionRequestSchema", () => {
   it("accepts a valid request and defaults to a random model", () => {
     const parsed = photoSessionRequestSchema.parse(base);
     expect(parsed.randomModel).toBe(true);
+    expect(parsed.imageSize).toBe("2K");
+    expect(photoSessionRequestSchema.safeParse({ ...base, imageSize: "1K" }).success).toBe(false);
     expect(parsed.instructions).toBe("");
   });
   it("rejects unknown locations, empty locations and oversized sessions", () => {

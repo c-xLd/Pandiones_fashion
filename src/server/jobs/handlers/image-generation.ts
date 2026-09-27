@@ -20,6 +20,7 @@ import {
   permanent,
   productContext,
   storeGeneratedImage,
+  upscaleIfNeeded,
 } from "./shared";
 
 export const imageGenerationHandler: JobHandler = {
@@ -95,7 +96,8 @@ export const imageGenerationHandler: JobHandler = {
       return { status: "cancelled", reason: "Cancelled by user during generation; output discarded" };
     }
 
-    for (const image of result.images.slice(0, 1)) {
+    for (const generated of result.images.slice(0, 1)) {
+      const { image, upscaled } = await upscaleIfNeeded(generated, config.style.imageSize);
       const saved = await storeGeneratedImage(ctx.admin, job, image, {
         product_id: product.id,
         model_profile_id: profile?.id ?? null,
@@ -112,6 +114,7 @@ export const imageGenerationHandler: JobHandler = {
           finishReason: result.finishReason,
           resolvedModel: result.resolvedModel,
           latencyMs: result.latencyMs,
+          upscaled,
         },
         provider: result.provider,
         model: result.resolvedModel ?? result.model,

@@ -12,6 +12,12 @@ export const SAFETY_BASELINE =
   "non-explicit, tasteful commercial fashion product photography suitable for an e-commerce store. " +
   "No nudity beyond what the garment itself covers, no sexualised posing, no minors.";
 
+/** Photographic realism cues shared by every people prompt. */
+export const REALISM =
+  "Hyper-realistic human detail: natural skin texture with fine pores and subtle imperfections, individual hair strands, " +
+  "realistic eyes with natural catchlights, natural proportions and anatomically correct hands; " +
+  "shot on a full-frame camera with an 85mm lens, true-to-life colours, no plastic or airbrushed look.";
+
 export interface ProductContext {
   sku: string;
   title: string;
@@ -104,6 +110,7 @@ export function buildCreativeDirection(style: ShootStyle): string {
   if (style.lighting) lines.push(`- Lighting: ${style.lighting}.`);
   if (style.creativeInstructions) lines.push(`- Additional styling notes: ${style.creativeInstructions}`);
   lines.push("- Photorealistic, high-end e-commerce fashion photography, sharp focus on the garment.");
+  lines.push(`- ${REALISM}`);
   return lines.join("\n");
 }
 
@@ -191,6 +198,7 @@ export function buildConciseProductShotPrompt(input: {
   } else if (!model && input.modelPersona) {
     parts.push(`The model is a fictional person: ${input.modelPersona}. Do not resemble any real or famous person.`);
   }
+  if (model?.description) parts.push(`Model: ${model.description}.`);
   if (model) {
     const look = Object.entries(model.appearance)
       .filter(([, v]) => v)
@@ -204,7 +212,8 @@ export function buildConciseProductShotPrompt(input: {
   if (style.lighting) parts.push(`Lighting: ${style.lighting}.`);
   if (style.creativeInstructions) parts.push(style.creativeInstructions);
   if (input.regenerationNote) parts.push(`Fix: ${input.regenerationNote}`);
-  parts.push("Tasteful, non-explicit catalogue photo, sharp focus on the garment, natural skin texture, realistic hands.");
+  parts.push(REALISM);
+  parts.push("Tasteful, non-explicit catalogue photo, sharp focus on the garment.");
   return parts.join(" ");
 }
 
@@ -215,7 +224,8 @@ export function buildModelPortraitPrompt(model: ModelContext, instructions: stri
     hasReferences
       ? "Use the provided reference images to keep the same identity (face, hair, skin tone)."
       : "This is a new, fictional model. Do not resemble any real or famous person.",
-    "Framing: head and shoulders to waist, neutral expression, plain light grey seamless background, soft even lighting, wearing a simple plain black fitted top.",
+    "Framing: front view facing the camera and looking into the lens, head to waist, natural soft expression, plain light grey seamless background, soft even studio lighting, wearing a simple plain black fitted top.",
+    REALISM,
   ];
   if (instructions) parts.push(`Additional instructions: ${instructions}`);
   parts.push(`SAFETY:\n- ${SAFETY_BASELINE}`);

@@ -152,30 +152,37 @@ export function planPhotoSession(input: { count: number; locations: readonly Ses
 }
 
 const PERSONA = {
-  age: ["mid 20s", "late 20s", "early 30s", "mid 30s"],
-  skin: ["fair", "light olive", "warm beige", "medium tan", "deep brown", "rich dark"],
+  age: ["mid 20s", "late 20s", "early 30s"],
+  skin: ["fair porcelain", "light olive", "warm golden", "sun-kissed tan", "deep brown", "rich ebony"],
   hair: [
-    "shoulder-length dark brown hair",
-    "short black hair",
-    "long wavy auburn hair",
-    "sleek blonde hair tied back",
-    "curly dark hair",
-    "short light-brown hair",
-    "long straight black hair",
+    "long glossy dark brown waves",
+    "sleek straight black hair past the shoulders",
+    "honey-blonde balayage in soft waves",
+    "copper-auburn hair in loose curls",
+    "chic chestnut bob",
+    "long platinum-blonde hair",
+    "voluminous natural dark curls",
   ],
-  build: ["slim build", "athletic build", "average build"],
-  feature: ["defined cheekbones", "soft friendly features", "a strong jawline", "light freckles", "a warm natural smile"],
+  eyes: ["hazel eyes", "deep brown eyes", "green eyes", "light blue eyes", "grey-blue eyes"],
+  face: [
+    "high cheekbones and a defined jawline",
+    "soft oval face with full lips",
+    "delicate features and a warm natural smile",
+    "striking symmetrical features",
+    "heart-shaped face with a light dusting of freckles",
+  ],
+  build: ["slim model figure", "tall athletic model figure", "graceful slender figure"],
 };
 
 /**
- * A fictional model description reused for every shot of a session so the
+ * A fictional female fashion model reused for every shot of a session so the
  * same person appears throughout (text only: identity can still drift
- * between images without a reference photo).
+ * between images without a reference photo — casting a model fixes that).
  */
 export function randomModelPersona(seed: string): string {
   const rand = seededRandom(`persona:${seed}`);
   function pick<T>(list: readonly T[]): T {
     return list[Math.floor(rand() * list.length)] as T;
   }
-  return `age ${pick(PERSONA.age)}, ${pick(PERSONA.skin)} skin, ${pick(PERSONA.hair)}, ${pick(PERSONA.build)}, ${pick(PERSONA.feature)}`;
+  return `a beautiful professional female fashion model, age ${pick(PERSONA.age)}, ${pick(PERSONA.skin)} skin, ${pick(PERSONA.hair)}, ${pick(PERSONA.eyes)}, ${pick(PERSONA.face)}, ${pick(PERSONA.build)}`;
 }
