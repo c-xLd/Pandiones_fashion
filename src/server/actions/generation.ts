@@ -1,0 +1,332 @@
+"use server";
+
+import { randomUUID } from "node:crypto";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import {
+  imageJobConfigSchema,
+  presetInputSchema,
+  reviewInputSchema,
+  shootRequestSchema,
+  shootStyleSchema,
+  type ImageJobConfig,
+  type ShootRequest,
+} from "@/lib/domain/schemas";
+import { geminiConfig } from "@/lib/env";
+import type { ActionResult, JobRow, ResultRow } from "@/lib/types";
+import { requireOrgContext } from "../context";
+import { UserFacingError, check, runAction, toActionError } from "../action";
+import { enforceRateLimit } from "../rate-limit";
+import { audit } from "../audit";
+import { enqueueJobs, type EnqueueInput } from "../jobs/enqueue";
+
+/** Upper bound on images created by one shoot submission. */
+const MAX_JOBS_PER_SHOOT = 40;
+
+export async function createShoot(input: ShootRequest): Promise<ActionResult<{ batchId: string; jobCount: number; created: number }>> {
+  return runAction("createShoot", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("generate", ctx.userId);
+    const req = shootRequestSchema.parse(input);
+    const org = ctx.org.organizationId;
+    const cfg = geminiConfig();
+
+    const total = req.shotTypes.length * req.style.variations;
+    if (total > MAX_JOBS_PER_SHOOT) {
+      throw new UserFacingError(`This shoot would create ${total} images; the maximum per submission is ${MAX_JOBS_PER_SHOOT}.`);
+    }
+    const refCount = req.productReferenceAssetIds.length + req.modelReferenceAssetIds.length;
+    if (refCount > cfg.maxReferenceImages) {
+      throw new UserFacingError(`Select at most ${cfg.maxReferenceImages} reference images in total (currently ${refCount}).`);
+    }
+
+    // Verify every referenced record belongs to this organization.
+    const product = check(
+      await ctx.supabase.from("products").select("id, status").eq("id", req.productId).eq("organization_id", org).maybeSingle(),
+      "Load product",
+    ) as { id: string; status: string } | null;
+    if (!product) throw new UserFacingError("Product not found.");
+    if (product.status === "archived") throw new UserFacingError("Archived products cannot be used for new shoots.");
+
+    const assets = check(
+      await ctx.supabase.from("product_assets").select("id").eq("product_id", req.productId).eq("organization_id", org).in("id", req.productReferenceAssetIds),
+      "Load assets",
+    ) as { id: string }[];
+    if (assets.length !== new Set(req.productReferenceAssetIds).size) throw new UserFacingError("Some product reference images are invalid.");
+
+    if (req.modelProfileId) {
+      const model = check(
+        await ctx.supabase.from("model_profiles").select("id, status").eq("id", req.modelProfileId).eq("organization_id", org).maybeSingle(),
+        "Load model",
+      ) as { id: string; status: string } | null;
+      if (!model) throw new UserFacingError("Model profile not found.");
+      if (model.status === "retired") throw new UserFacingError("Retired model profiles cannot be used.");
+      if (req.modelReferenceAssetIds.length) {
+        const modelAssets = check(
+          await ctx.supabase
+            .from("model_profile_assets")
+            .select("id")
+            .eq("model_profile_id", req.modelProfileId)
+            .eq("organization_id", org)
+            .in("id", req.modelReferenceAssetIds),
+          "Load model assets",
+        ) as { id: string }[];
+        if (modelAssets.length !== new Set(req.modelReferenceAssetIds).size) throw new UserFacingError("Some model reference images are invalid.");
+      }
+    } else if (req.modelReferenceAssetIds.length) {
+      throw new UserFacingError("Model reference images require a model profile.");
+    }
+
+    if (req.presetId) {
+      const preset = check(await ctx.supabase.from("shoot_presets").select("id").eq("id", req.presetId).maybeSingle(), "Load preset");
+      if (!preset) throw new UserFacingError("Preset not found.");
+    }
+
+    const batchId = randomUUID();
+    const jobs: EnqueueInput[] = [];
+    for (const shotType of req.shotTypes) {
+      for (let v = 0; v < req.style.variations; v++) {
+        const config: ImageJobConfig = {
+          kind: "product_shot",
+          style: shootStyleSchema.parse({ ...req.style, shotType }),
+          presetId: req.presetId,
+          productReferenceAssetIds: req.productReferenceAssetIds,
+          modelReferenceAssetIds: req.modelReferenceAssetIds,
+          variationIndex: v,
+          regenerationNote: null,
+        };
+        jobs.push({
+          jobType: "image_generation",
+          provider: "gemini",
+          model: cfg.imageModel,
+          idempotencyKey: `${req.idempotencyKey}:${shotType}:${v}`,
+          productId: req.productId,
+          modelProfileId: req.modelProfileId,
+          batchId,
+          inputAssetRefs: [
+            ...req.productReferenceAssetIds.map((id) => ({ kind: "product_asset", id })),
+            ...req.modelReferenceAssetIds.map((id) => ({ kind: "model_asset", id })),
+          ],
+          config,
+        });
+      }
+    }
+    const { jobs: rows, created } = await enqueueJobs(ctx, jobs);
+    if (created > 0) {
+      check(
+        await ctx.supabase.from("products").update({ status: "processing" }).eq("id", req.productId).eq("organization_id", org),
+        "Update product",
+      );
+    }
+    await audit({ organizationId: org, actorId: ctx.userId, action: "shoot.created", entityType: "product", entityId: req.productId, metadata: { batchId, jobs: rows.length, created } });
+    revalidatePath("/jobs");
+    revalidatePath(`/products/${req.productId}`);
+    return { batchId: rows[0]?.batch_id ?? batchId, jobCount: rows.length, created };
+  });
+}
+
+const regenerateSchema = z.object({
+  resultId: z.uuid(),
+  note: z.string().trim().max(2000).optional(),
+  idempotencyKey: z.string().min(8).max(100),
+});
+
+export async function regenerateResult(input: z.input<typeof regenerateSchema>): Promise<ActionResult<{ jobId: string }>> {
+  return runAction("regenerateResult", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("generate", ctx.userId);
+    const data = regenerateSchema.parse(input);
+    const org = ctx.org.organizationId;
+    const result = check(
+      await ctx.supabase.from("generation_results").select("*").eq("id", data.resultId).eq("organization_id", org).maybeSingle(),
+      "Load result",
+    ) as ResultRow | null;
+    if (!result) throw new UserFacingError("Result not found.");
+    const job = check(
+      await ctx.supabase.from("generation_jobs").select("*").eq("id", result.job_id).eq("organization_id", org).single(),
+      "Load job",
+    ) as JobRow;
+    if (job.job_type !== "image_generation" && job.job_type !== "model_portrait") {
+      throw new UserFacingError("Only image results can be regenerated here.");
+    }
+    const cfg = geminiConfig();
+    let config: Record<string, unknown> = job.config;
+    if (job.job_type === "image_generation") {
+      const parsed = imageJobConfigSchema.parse(job.config);
+      config = { ...parsed, regenerationNote: data.note || null };
+    } else if (data.note) {
+      config = { ...job.config, instructions: data.note };
+    }
+    const { jobs } = await enqueueJobs(ctx, [
+      {
+        jobType: job.job_type,
+        provider: "gemini",
+        model: cfg.imageModel,
+        idempotencyKey: data.idempotencyKey,
+        productId: job.product_id,
+        modelProfileId: job.model_profile_id,
+        batchId: job.batch_id,
+        parentJobId: job.id,
+        sourceResultId: result.id,
+        inputAssetRefs: job.input_asset_refs,
+        config,
+      },
+    ]);
+    await audit({ organizationId: org, actorId: ctx.userId, action: "result.regenerated", entityType: "generation_result", entityId: result.id, metadata: { note: Boolean(data.note) } });
+    revalidatePath("/jobs");
+    return { jobId: jobs[0]?.id ?? "" };
+  });
+}
+
+export async function retryJob(jobId: string): Promise<ActionResult<{ jobId: string }>> {
+  return runAction("retryJob", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("generate", ctx.userId);
+    const org = ctx.org.organizationId;
+    const job = check(
+      await ctx.supabase.from("generation_jobs").select("*").eq("id", z.uuid().parse(jobId)).eq("organization_id", org).maybeSingle(),
+      "Load job",
+    ) as JobRow | null;
+    if (!job) throw new UserFacingError("Job not found.");
+    if (job.status !== "failed" && job.status !== "cancelled") throw new UserFacingError("Only failed or cancelled jobs can be retried.");
+    const cfg = geminiConfig();
+    const model =
+      job.job_type === "image_generation" || job.job_type === "model_portrait"
+        ? cfg.imageModel
+        : job.job_type === "video_generation"
+          ? job.model
+          : cfg.analysisModel;
+    const { jobs } = await enqueueJobs(ctx, [
+      {
+        jobType: job.job_type,
+        provider: job.provider,
+        model,
+        idempotencyKey: `retry:${job.id}:${randomUUID()}`,
+        productId: job.product_id,
+        modelProfileId: job.model_profile_id,
+        videoProjectId: job.video_project_id,
+        batchId: job.batch_id,
+        parentJobId: job.id,
+        sourceResultId: job.source_result_id,
+        inputAssetRefs: job.input_asset_refs,
+        config: job.config,
+      },
+    ]);
+    if (job.job_type === "video_generation" && job.video_project_id) {
+      check(await ctx.supabase.from("video_projects").update({ status: "queued" }).eq("id", job.video_project_id).eq("organization_id", org), "Update project");
+    }
+    if (job.job_type === "product_analysis" && job.product_id) {
+      check(await ctx.supabase.from("products").update({ analysis_status: "queued" }).eq("id", job.product_id).eq("organization_id", org), "Update product");
+    }
+    await audit({ organizationId: org, actorId: ctx.userId, action: "job.retried", entityType: "generation_job", entityId: job.id });
+    revalidatePath("/jobs");
+    return { jobId: jobs[0]?.id ?? "" };
+  });
+}
+
+export async function cancelJob(jobId: string): Promise<ActionResult<{ status: string }>> {
+  return runAction("cancelJob", async () => {
+    const ctx = await requireOrgContext("editor");
+    const id = z.uuid().parse(jobId);
+    const status = check(await ctx.supabase.rpc("cancel_job", { p_job_id: id }), "Cancel job") as string;
+    await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "job.cancel_requested", entityType: "generation_job", entityId: id, metadata: { status } });
+    revalidatePath("/jobs");
+    return { status };
+  });
+}
+
+export async function reviewResults(input: z.input<typeof reviewInputSchema>): Promise<ActionResult<{ updated: number }>> {
+  return runAction("reviewResults", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("mutate", ctx.userId);
+    const data = reviewInputSchema.parse(input);
+    const pending = data.decision === "pending";
+    const rows = check(
+      await ctx.supabase
+        .from("generation_results")
+        .update({
+          review_status: data.decision,
+          review_notes: data.notes ?? null,
+          reviewed_by: pending ? null : ctx.userId,
+          reviewed_at: pending ? null : new Date().toISOString(),
+        })
+        .eq("organization_id", ctx.org.organizationId)
+        .in("id", data.resultIds)
+        .select("id"),
+      "Save review",
+    ) as { id: string }[];
+    await audit({
+      organizationId: ctx.org.organizationId,
+      actorId: ctx.userId,
+      action: `result.${data.decision}`,
+      entityType: "generation_result",
+      entityId: data.resultIds.length === 1 ? data.resultIds[0] : null,
+      metadata: { count: rows.length, ids: data.resultIds.slice(0, 50) },
+    });
+    revalidatePath("/review");
+    revalidatePath("/library");
+    for (const id of data.resultIds.slice(0, 20)) revalidatePath(`/results/${id}`);
+    return { updated: rows.length };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
+export type PresetFormState = { ok: boolean; error?: string; message?: string; fieldErrors?: Record<string, string[]> } | null;
+
+function presetFromForm(formData: FormData) {
+  return presetInputSchema.parse({
+    name: formData.get("name"),
+    category: formData.get("category"),
+    description: formData.get("description") ?? undefined,
+    config: {
+      shotType: formData.get("shotType"),
+      pose: formData.get("pose") ?? "",
+      cameraAngle: formData.get("cameraAngle") ?? "",
+      framing: formData.get("framing"),
+      background: formData.get("background") ?? "",
+      lighting: formData.get("lighting") ?? "",
+      aspectRatio: formData.get("aspectRatio"),
+      imageSize: formData.get("imageSize"),
+      variations: formData.get("variations"),
+      creativeInstructions: formData.get("creativeInstructions") ?? "",
+    },
+  });
+}
+
+export async function savePreset(presetId: string | null, _prev: PresetFormState, formData: FormData): Promise<PresetFormState> {
+  try {
+    const ctx = await requireOrgContext("editor");
+    const input = presetFromForm(formData);
+    const org = ctx.org.organizationId;
+    if (presetId) {
+      const rows = check(
+        await ctx.supabase.from("shoot_presets").update(input).eq("id", z.uuid().parse(presetId)).eq("organization_id", org).select("id"),
+        "Update preset",
+      ) as { id: string }[];
+      if (!rows.length) throw new UserFacingError("Preset not found or read-only.");
+    } else {
+      check(await ctx.supabase.from("shoot_presets").insert({ ...input, organization_id: org, created_by: ctx.userId }), "Create preset");
+    }
+    await audit({ organizationId: org, actorId: ctx.userId, action: presetId ? "preset.updated" : "preset.created", entityType: "shoot_preset", entityId: presetId });
+    revalidatePath("/presets");
+    return { ok: true, message: "Preset saved." };
+  } catch (error) {
+    return toActionError(error, "savePreset");
+  }
+}
+
+export async function deletePreset(presetId: string): Promise<ActionResult> {
+  return runAction("deletePreset", async () => {
+    const ctx = await requireOrgContext("editor");
+    const rows = check(
+      await ctx.supabase.from("shoot_presets").delete().eq("id", z.uuid().parse(presetId)).eq("organization_id", ctx.org.organizationId).select("id"),
+      "Delete preset",
+    ) as { id: string }[];
+    if (!rows.length) throw new UserFacingError("Preset not found or read-only.");
+    await audit({ organizationId: ctx.org.organizationId, actorId: ctx.userId, action: "preset.deleted", entityType: "shoot_preset", entityId: presetId });
+    revalidatePath("/presets");
+    return undefined;
+  });
+}

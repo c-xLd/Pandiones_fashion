@@ -1,0 +1,183 @@
+"use client";
+
+import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, Loader2, Upload, XCircle, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Progress } from "@/components/ui/progress";
+import { ASSET_ROLES, type AssetRole } from "@/lib/domain/schemas";
+import { IMAGE_MIME_TYPES, parseBulkFileName, validateDeclaredImage } from "@/lib/domain/files";
+import { runPool, uploadFile } from "./upload-client";
+
+type ItemState = "pending" | "uploading" | "processing" | "done" | "error";
+
+interface Item {
+  key: string;
+  file: File;
+  role: AssetRole;
+  state: ItemState;
+  message?: string;
+  warning?: string;
+}
+
+const CONCURRENCY = 3;
+
+function guessRole(name: string): AssetRole {
+  const parsed = parseBulkFileName(name);
+  const role = parsed?.role as AssetRole | undefined;
+  return role && (ASSET_ROLES as readonly string[]).includes(role) ? role : "front";
+}
+
+export function ImageUploader({ target, entityId }: { target: "products" | "models"; entityId: string }) {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [items, setItems] = useState<Item[]>([]);
+  const [running, setRunning] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  const update = (key: string, patch: Partial<Item>) =>
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const next: Item[] = Array.from(files).map((file) => {
+      const check = validateDeclaredImage({ name: file.name, size: file.size, type: file.type });
+      return {
+        key: `${file.name}-${file.size}-${crypto.randomUUID()}`,
+        file,
+        role: guessRole(file.name),
+        state: check.ok ? "pending" : "error",
+        message: check.ok ? undefined : check.error,
+      };
+    });
+    setItems((prev) => [...prev, ...next]);
+  }, []);
+
+  async function start() {
+    setRunning(true);
+    const queue = items.filter((i) => i.state === "pending");
+    await runPool(queue, CONCURRENCY, async (item) => {
+      try {
+        const res = await uploadFile(target, entityId, item.file, item.role, (phase) => update(item.key, { state: phase }));
+        if (res.ok) update(item.key, { state: "done", warning: res.warning ?? undefined });
+        else update(item.key, { state: "error", message: res.error });
+      } catch (err) {
+        update(item.key, { state: "error", message: err instanceof Error ? err.message : "Upload failed" });
+      }
+    });
+    setRunning(false);
+    router.refresh();
+  }
+
+  const pending = items.filter((i) => i.state === "pending").length;
+  const finished = items.filter((i) => i.state === "done" || i.state === "error").length;
+
+  return (
+    <div className="space-y-3">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          addFiles(e.dataTransfer.files);
+        }}
+        className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center transition-colors ${dragging ? "border-primary bg-accent" : ""}`}
+      >
+        <Upload className="mb-2 h-6 w-6 text-muted-foreground" aria-hidden />
+        <p className="text-sm">Drag images here or</p>
+        <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => inputRef.current?.click()}>
+          Choose files
+        </Button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={IMAGE_MIME_TYPES.join(",")}
+          multiple
+          className="sr-only"
+          aria-label="Choose image files"
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <p className="mt-2 text-xs text-muted-foreground">JPEG, PNG or WebP · up to 25 MB · min 256 px · originals are preserved</p>
+      </div>
+
+      {items.length > 0 && (
+        <div className="space-y-2">
+          {running && <Progress value={(finished / items.length) * 100} label="Upload progress" />}
+          <ul className="divide-y rounded-md border text-sm">
+            {items.map((item) => (
+              <li key={item.key} className="flex flex-wrap items-center gap-3 p-2">
+                <StateIcon state={item.state} />
+                <span className="min-w-0 flex-1 truncate" title={item.file.name}>
+                  {item.file.name}
+                  {item.message && <span className="block text-xs text-destructive">{item.message}</span>}
+                  {item.warning && <span className="block text-xs text-warning-foreground">{item.warning}</span>}
+                </span>
+                {target === "products" && (
+                  <NativeSelect
+                    aria-label={`Role for ${item.file.name}`}
+                    className="h-8 w-28"
+                    value={item.role}
+                    disabled={item.state !== "pending"}
+                    onChange={(e) => update(item.key, { role: e.target.value as AssetRole })}
+                  >
+                    {ASSET_ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
+                {item.state === "pending" || item.state === "error" ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={running}
+                    onClick={() => setItems((prev) => prev.filter((i) => i.key !== item.key))}
+                  >
+                    Remove
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2">
+            <Button type="button" onClick={start} disabled={running || pending === 0}>
+              {running ? <Loader2 className="animate-spin" /> : <Upload />}
+              Upload {pending > 0 ? `${pending} file${pending > 1 ? "s" : ""}` : ""}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={running}
+              onClick={() => setItems((prev) => prev.filter((i) => i.state === "pending"))}
+            >
+              Clear finished
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StateIcon({ state }: { state: ItemState }) {
+  switch (state) {
+    case "done":
+      return <CheckCircle2 className="h-4 w-4 text-success" aria-label="Uploaded" />;
+    case "error":
+      return <XCircle className="h-4 w-4 text-destructive" aria-label="Failed" />;
+    case "uploading":
+    case "processing":
+      return <Loader2 className="h-4 w-4 animate-spin text-info" aria-label={state} />;
+    default:
+      return <AlertTriangle className="h-4 w-4 text-muted-foreground opacity-0" aria-hidden />;
+  }
+}
