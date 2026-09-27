@@ -13,7 +13,7 @@ export default async function OnboardingPage() {
   if (!ctx) redirect("/login");
   const { d } = await getI18n();
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md space-y-4">
         <OnboardingForm hasOrganizations={ctx.memberships.length > 0} />
         <p className="text-center text-xs text-muted-foreground">

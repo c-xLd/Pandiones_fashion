@@ -1,75 +1,133 @@
 import Link from "next/link";
-import { AlertTriangle, Camera, ClipboardCheck, ListChecks, Shirt } from "lucide-react";
-import { requirePageContext } from "@/server/context";
+import { AlertTriangle, Clapperboard, Loader2 } from "lucide-react";
+import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { budgetState } from "@/lib/domain/costs";
-import { isGeminiConfigured } from "@/lib/env";
-import { isVideoEnabled } from "@/lib/providers/registry";
-import { formatMoney } from "@/lib/utils";
+import { geminiConfig, isGeminiConfigured } from "@/lib/env";
+import { formatMoney, cn } from "@/lib/utils";
 import { getI18n } from "@/lib/i18n/server";
 import { pageMetadata } from "@/lib/i18n/metadata";
 import { fmt } from "@/lib/i18n/config";
-import type { ResultRow } from "@/lib/types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { jobErrorLabel, shotLabel } from "@/lib/i18n/labels";
+import type { ShootStyle } from "@/lib/domain/schemas";
+import type { JobRow, ResultRow } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/studio/page-header";
-import { MediaThumb } from "@/components/studio/media-thumb";
 import { QcBadge, StatusBadge } from "@/components/studio/status-badge";
-import { EmptyState } from "@/components/studio/empty-state";
+import { AutoRefresh } from "@/components/studio/auto-refresh";
+import { MediaTile } from "./_create/media-tile";
+import { Composer } from "./_create/composer";
 
-export const generateMetadata = pageMetadata((d) => d.dashboard.metaTitle);
+export const generateMetadata = pageMetadata((d) => d.create.metaTitle);
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
+const GALLERY_LIMIT = 60;
+const GENERATION_TYPES = ["image_generation", "video_generation", "model_portrait"] as const;
+
+/** "3:4" → "3/4" for CSS aspect-ratio; falls back to portrait. */
+function cssAspect(value: unknown, fallback = "3/4"): string {
+  return typeof value === "string" && /^\d+:\d+$/.test(value) ? value.replace(":", "/") : fallback;
+}
+
+export default async function CreatePage({ searchParams }: { searchParams: Promise<{ error?: string; kind?: string }> }) {
+  const sp = await searchParams;
+  const kind = sp.kind === "image" || sp.kind === "video" ? sp.kind : null;
   const ctx = await requirePageContext();
   const { locale, d } = await getI18n();
-  const money = (v: number | null) => formatMoney(v, "USD", 2, locale);
+  const t = d.create;
   const db = ctx.supabase;
   const org = ctx.org.organizationId;
+  const canEdit = roleAtLeast(ctx.org.role, "editor");
 
-  const [products, pendingReview, activeJobs, failedJobs, recent, orgRow, spend] = await Promise.all([
-    db.from("products").select("id", { count: "exact", head: true }).eq("organization_id", org).neq("status", "archived"),
-    db.from("generation_results").select("id", { count: "exact", head: true }).eq("organization_id", org).eq("review_status", "pending"),
-    db.from("generation_jobs").select("id", { count: "exact", head: true }).eq("organization_id", org).in("status", ["queued", "processing"]),
+  let results = db.from("generation_results").select("*, products(sku)").eq("organization_id", org).order("created_at", { ascending: false }).limit(GALLERY_LIMIT);
+  if (kind) results = results.eq("kind", kind);
+
+  const [resultsRes, activeRes, failedRes, pendingReview, productsRes, modelsRes, presetsRes, orgRow, spend] = await Promise.all([
+    results,
     db
       .from("generation_jobs")
-      .select("id", { count: "exact", head: true })
+      .select("id, job_type, status, progress, config, created_at, products(sku)")
       .eq("organization_id", org)
+      .in("job_type", [...GENERATION_TYPES])
+      .in("status", ["queued", "processing"])
+      .order("created_at", { ascending: false })
+      .limit(24),
+    db
+      .from("generation_jobs")
+      .select("id, job_type, error_code, config, created_at, products(sku)")
+      .eq("organization_id", org)
+      .in("job_type", [...GENERATION_TYPES])
       .eq("status", "failed")
-      .gte("created_at", new Date(Date.now() - 7 * 86400_000).toISOString()),
-    db.from("generation_results").select("*").eq("organization_id", org).eq("kind", "image").order("created_at", { ascending: false }).limit(8),
+      .gte("completed_at", new Date(Date.now() - 6 * 3600_000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(4),
+    db.from("generation_results").select("id", { count: "exact", head: true }).eq("organization_id", org).eq("review_status", "pending"),
+    canEdit
+      ? db
+          .from("products")
+          .select("id, sku, title, product_assets(id, role, thumbnail_path, created_at)")
+          .eq("organization_id", org)
+          .neq("status", "archived")
+          .order("updated_at", { ascending: false })
+          .limit(60)
+      : Promise.resolve({ data: [] }),
+    canEdit
+      ? db.from("model_profiles").select("id, display_name, model_profile_assets(id, is_primary, thumbnail_path)").eq("organization_id", org).neq("status", "retired").order("display_name")
+      : Promise.resolve({ data: [] }),
+    canEdit
+      ? db.from("shoot_presets").select("id, name, category, config").or(`organization_id.is.null,organization_id.eq.${org}`).order("category").order("name")
+      : Promise.resolve({ data: [] }),
     db.from("organizations").select("monthly_budget_usd, budget_alert_percent").eq("id", org).single(),
     db.rpc("org_month_spend", { p_org: org }),
   ]);
 
-  const results = (recent.data ?? []) as ResultRow[];
-  const urls = await signUrls(db, results.map((r) => r.thumbnail_path));
+  type Joined<T> = T & { products: { sku: string } | null };
+  const rows = (resultsRes.data ?? []) as Joined<ResultRow>[];
+  const active = (activeRes.data ?? []) as unknown as Joined<Pick<JobRow, "id" | "job_type" | "status" | "progress" | "config" | "created_at">>[];
+  const failed = (failedRes.data ?? []) as unknown as Joined<Pick<JobRow, "id" | "job_type" | "error_code" | "config" | "created_at">>[];
+
+  type ProductWithAssets = { id: string; sku: string; title: string; product_assets: { id: string; role: string; thumbnail_path: string | null; created_at: string }[] };
+  type ModelWithAssets = { id: string; display_name: string; model_profile_assets: { id: string; is_primary: boolean; thumbnail_path: string | null }[] };
+  const ROLE_ORDER = ["front", "side", "back", "detail", "fabric", "other"];
+  const products = ((productsRes.data ?? []) as ProductWithAssets[]).map((p) => ({
+    ...p,
+    product_assets: [...p.product_assets].sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.created_at.localeCompare(b.created_at)),
+  }));
+  const models = (modelsRes.data ?? []) as ModelWithAssets[];
+  const presets = (presetsRes.data ?? []) as { id: string; name: string; category: string; config: Partial<ShootStyle> }[];
+  const modelPrimary = (m: ModelWithAssets) => m.model_profile_assets.find((a) => a.is_primary) ?? m.model_profile_assets[0];
+
+  const urls = await signUrls(db, [
+    ...rows.map((r) => (r.kind === "video" ? r.storage_path : r.thumbnail_path)),
+    ...products.map((p) => p.product_assets[0]?.thumbnail_path ?? null),
+    ...models.map((m) => modelPrimary(m)?.thumbnail_path ?? null),
+  ]);
+  const signed = (path: string | null | undefined) => (path ? urls[path] ?? null : null);
+
   const monthSpend = Number(spend.data ?? 0);
   const budget = orgRow.data?.monthly_budget_usd == null ? null : Number(orgRow.data.monthly_budget_usd);
   const budgetInfo = budgetState(monthSpend, budget, orgRow.data?.budget_alert_percent ?? 80);
+  const money = (v: number | null) => formatMoney(v, "USD", 2, locale);
 
-  const stats = [
-    { label: d.dashboard.activeProducts, value: products.count ?? 0, href: "/products", icon: Shirt },
-    { label: d.dashboard.awaitingReview, value: pendingReview.count ?? 0, href: "/review", icon: ClipboardCheck },
-    { label: d.dashboard.jobsInProgress, value: activeJobs.count ?? 0, href: "/jobs?status=active", icon: ListChecks },
-    { label: d.dashboard.failedJobs, value: failedJobs.count ?? 0, href: "/jobs?status=failed", icon: AlertTriangle },
-  ];
+  let disabledReason: string | null = null;
+  let maxReferences = 6;
+  if (!canEdit) disabledReason = t.readOnly;
+  else if (!isGeminiConfigured()) disabledReason = d.shoot.geminiMissing;
+  else maxReferences = geminiConfig().maxReferenceImages;
+
+  const jobAspect = (config: Record<string, unknown>, jobType: string) => {
+    const style = (config.style ?? {}) as Record<string, unknown>;
+    return cssAspect(style.aspectRatio ?? config.aspectRatio, jobType === "video_generation" ? "16/9" : "3/4");
+  };
+  const isEmpty = rows.length === 0 && active.length === 0 && failed.length === 0;
+
+  const filters = [
+    { key: null, label: t.all },
+    { key: "image", label: t.images },
+    { key: "video", label: t.videos },
+  ] as const;
 
   return (
-    <>
-      <PageHeader
-        title={fmt(d.dashboard.welcome, { org: ctx.org.organizationName })}
-        description={d.dashboard.description}
-        actions={
-          <Button asChild>
-            <Link href="/shoots/new">
-              <Camera /> {d.nav.newShoot}
-            </Link>
-          </Button>
-        }
-      />
-      {error === "forbidden" && (
+    <div className="pb-64">
+      {sp.error === "forbidden" && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{d.dashboard.forbidden}</AlertDescription>
         </Alert>
@@ -80,7 +138,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <AlertDescription>{d.dashboard.geminiMissingBody}</AlertDescription>
         </Alert>
       )}
-      {budgetInfo.level === "warning" || budgetInfo.level === "exceeded" ? (
+      {(budgetInfo.level === "warning" || budgetInfo.level === "exceeded") && (
         <Alert variant={budgetInfo.level === "exceeded" ? "destructive" : "warning"} className="mb-4">
           <AlertTitle>{budgetInfo.level === "exceeded" ? d.dashboard.budgetExceededTitle : d.dashboard.budgetWarningTitle}</AlertTitle>
           <AlertDescription>
@@ -90,78 +148,143 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </Link>
           </AlertDescription>
         </Alert>
-      ) : null}
+      )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map(({ label, value, href, icon: Icon }) => (
-          <Link key={label} href={href}>
-            <Card className="transition-colors hover:bg-accent/50">
-              <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-                <CardDescription>{label}</CardDescription>
-                <Icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-semibold">{value}</p>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
+      {isEmpty && !kind ? (
+        <section className="flex min-h-[55vh] flex-col items-center justify-center text-center">
+          <span className="flow-gradient mb-6 h-14 w-14 rounded-2xl opacity-90 shadow-[0_0_60px_-10px] shadow-brand" aria-hidden />
+          <h1 className="text-balance text-3xl font-semibold tracking-tight md:text-5xl">
+            <span className="flow-gradient-text">{t.heroTitle}</span>
+          </h1>
+          <p className="mt-4 max-w-xl text-balance text-muted-foreground">{t.heroBody}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{fmt(d.dashboard.welcome, { org: ctx.org.organizationName })}</p>
+        </section>
+      ) : (
+        <>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="flex rounded-full border bg-card/60 p-1" role="tablist" aria-label={d.common.filter}>
+              {filters.map((f) => {
+                const selected = kind === f.key;
+                return (
+                  <Link
+                    key={f.label}
+                    href={f.key ? `/?kind=${f.key}` : "/"}
+                    role="tab"
+                    aria-selected={selected}
+                    className={cn(
+                      "rounded-full px-3.5 py-1 text-sm transition-colors",
+                      selected ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {f.label}
+                  </Link>
+                );
+              })}
+            </div>
+            {active.length > 0 && (
+              <Link href="/jobs?status=active" className="flex items-center gap-1.5 rounded-full border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> {fmt(t.generatingCount, { n: active.length })}
+              </Link>
+            )}
+            {(pendingReview.count ?? 0) > 0 && (
+              <Link href="/review" className="rounded-full border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+                {fmt(t.awaitingReview, { n: pendingReview.count ?? 0 })}
+              </Link>
+            )}
+            <div className="ml-auto">
+              <AutoRefresh active={active.length > 0} />
+            </div>
+          </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>{d.dashboard.latestImages}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {results.length === 0 ? (
-              <EmptyState
-                icon={Camera}
-                title={d.dashboard.noImagesTitle}
-                description={d.dashboard.noImagesBody}
-                action={
-                  <Button asChild size="sm">
-                    <Link href="/products/new">{d.dashboard.addProduct}</Link>
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {results.map((r) => (
-                  <Link key={r.id} href={`/results/${r.id}`} className="space-y-1">
-                    <MediaThumb src={r.thumbnail_path ? urls[r.thumbnail_path] : null} alt={r.shot_type ?? ""} />
-                    <div className="flex flex-wrap gap-1">
-                      <StatusBadge status={r.review_status} />
-                      <QcBadge status={r.qc_status} />
-                    </div>
+          {rows.length === 0 && active.length === 0 && failed.length === 0 ? (
+            <p className="py-24 text-center text-muted-foreground">{t.empty}</p>
+          ) : (
+            <div className="columns-2 gap-3 md:columns-3 xl:columns-4 2xl:columns-5">
+              {active
+                .filter((j) => !kind || kind === (j.job_type === "video_generation" ? "video" : "image"))
+                .map((j) => (
+                    <Link
+                      key={j.id}
+                      href={`/jobs?status=active`}
+                      className="flow-shimmer relative mb-3 flex break-inside-avoid flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border text-center"
+                      style={{ aspectRatio: jobAspect(j.config, j.job_type) }}
+                    >
+                      {j.job_type === "video_generation" ? <Clapperboard className="h-5 w-5 text-muted-foreground" /> : <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+                      <span className="text-sm font-medium">{j.status === "queued" ? t.queued : t.generating}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {[j.products?.sku, shotLabel(d, ((j.config.style ?? {}) as { shotType?: string }).shotType)].filter(Boolean).join(" · ")}
+                      </span>
+                      {j.status === "processing" && j.progress > 0 && (
+                        <span className="absolute inset-x-4 bottom-4 h-1 overflow-hidden rounded-full bg-white/10">
+                          <span className="flow-gradient block h-full" style={{ width: `${Math.min(100, j.progress)}%` }} />
+                        </span>
+                      )}
+                    </Link>
+                ))}
+              {!kind &&
+                failed.map((j) => (
+                  <Link
+                    key={j.id}
+                    href="/jobs?status=failed"
+                    className="relative mb-3 flex break-inside-avoid flex-col items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-center"
+                    style={{ aspectRatio: jobAspect(j.config, j.job_type) }}
+                  >
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                    <span className="text-sm font-medium">{t.failed}</span>
+                    <span className="line-clamp-3 text-xs text-muted-foreground">{jobErrorLabel(d, j.error_code) ?? j.error_code}</span>
                   </Link>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{d.dashboard.thisMonth}</CardTitle>
-            <CardDescription>{d.dashboard.thisMonthDescription}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p className="text-3xl font-semibold">{money(monthSpend)}</p>
-            <p className="text-muted-foreground">{fmt(d.dashboard.budget, { budget: budget == null ? d.common.notSet : money(budget) })}</p>
-            <div className="space-y-1 border-t pt-3">
-              <p>
-                {d.dashboard.imageGeneration} <strong>{isGeminiConfigured() ? d.dashboard.configured : d.dashboard.notConfigured}</strong>
-              </p>
-              <p>
-                {d.dashboard.videoGeneration} <strong>{isVideoEnabled() ? d.dashboard.configured : d.dashboard.disabled}</strong>
-              </p>
+              {rows.map((r) => {
+                const title = [r.products?.sku, shotLabel(d, r.shot_type)].filter(Boolean).join(" · ") || d.enums.mediaKind[r.kind];
+                return (
+                  <MediaTile
+                    key={r.id}
+                    href={r.kind === "video" && r.video_project_id ? `/video/${r.video_project_id}` : `/results/${r.id}`}
+                    kind={r.kind}
+                    url={signed(r.kind === "video" ? r.storage_path : r.thumbnail_path)}
+                    alt={title}
+                    aspect={r.width && r.height ? `${r.width}/${r.height}` : r.kind === "video" ? "16/9" : "3/4"}
+                    title={title}
+                    subtitle={new Date(r.created_at).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}
+                    badges={
+                      <>
+                        <StatusBadge status={r.review_status} />
+                        {r.kind === "image" && <QcBadge status={r.qc_status} />}
+                      </>
+                    }
+                  />
+                );
+              })}
             </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/costs">{d.dashboard.costDashboard}</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    </>
+          )}
+          {rows.length >= GALLERY_LIMIT && (
+            <p className="mt-6 text-center">
+              <Link href="/library" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                {t.openLibrary}
+              </Link>
+            </p>
+          )}
+        </>
+      )}
+
+      <Composer
+        products={products.map((p) => ({
+          id: p.id,
+          sku: p.sku,
+          title: p.title,
+          thumb: signed(p.product_assets[0]?.thumbnail_path),
+          assetIds: p.product_assets.map((a) => a.id),
+        }))}
+        models={models.map((m) => ({
+          id: m.id,
+          name: m.display_name,
+          thumb: signed(modelPrimary(m)?.thumbnail_path),
+          primaryAssetIds: modelPrimary(m) ? [modelPrimary(m)!.id] : [],
+        }))}
+        presets={presets}
+        maxReferences={maxReferences}
+        disabledReason={disabledReason}
+      />
+    </div>
   );
 }

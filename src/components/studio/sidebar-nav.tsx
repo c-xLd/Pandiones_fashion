@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
+  Sparkles,
   Shirt,
   UserRound,
   SlidersHorizontal,
@@ -18,28 +18,66 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/client";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 
-const NAV: { href: string; key: keyof Dictionary["nav"]; icon: typeof Shirt }[] = [
-  { href: "/", key: "dashboard", icon: LayoutDashboard },
+type NavItem = { href: string; key: keyof Dictionary["nav"]; icon: typeof Shirt };
+
+/** Always visible in the top bar on large screens. */
+export const NAV_PRIMARY: NavItem[] = [
+  { href: "/", key: "create", icon: Sparkles },
   { href: "/products", key: "products", icon: Shirt },
   { href: "/models", key: "models", icon: UserRound },
-  { href: "/presets", key: "presets", icon: SlidersHorizontal },
-  { href: "/shoots/new", key: "newShoot", icon: Camera },
   { href: "/review", key: "review", icon: ClipboardCheck },
-  { href: "/jobs", key: "jobs", icon: ListChecks },
   { href: "/video", key: "video", icon: Clapperboard },
   { href: "/library", key: "library", icon: Images },
+];
+
+/** Reachable from the menu panel. */
+export const NAV_SECONDARY: NavItem[] = [
+  { href: "/shoots/new", key: "newShoot", icon: Camera },
+  { href: "/presets", key: "presets", icon: SlidersHorizontal },
+  { href: "/jobs", key: "jobs", icon: ListChecks },
   { href: "/costs", key: "costs", icon: Wallet },
   { href: "/settings", key: "settings", icon: Settings },
 ];
 
+export function isActive(pathname: string, href: string) {
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** Horizontal pill navigation for the top bar. */
+export function TopNav() {
+  const pathname = usePathname();
+  const { d } = useI18n();
+  return (
+    <nav className="hidden items-center gap-1 rounded-full border bg-card/60 p-1 lg:flex" aria-label={d.common.mainNav}>
+      {NAV_PRIMARY.map(({ href, key, icon: Icon }) => {
+        const active = isActive(pathname, href);
+        return (
+          <Link
+            key={href}
+            href={href}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm transition-colors",
+              active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {d.nav[key]}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Full vertical navigation used inside the menu panel. */
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { d } = useI18n();
   return (
-    <nav className="flex flex-col gap-0.5" aria-label={d.common.mainNav}>
-      {NAV.map(({ href, key, icon: Icon }) => {
-        const label = d.nav[key];
-        const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+    <nav className="grid grid-cols-2 gap-1.5" aria-label={d.common.mainNav}>
+      {[...NAV_PRIMARY, ...NAV_SECONDARY].map(({ href, key, icon: Icon }) => {
+        const active = isActive(pathname, href);
         return (
           <Link
             key={href}
@@ -47,12 +85,12 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
-              active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              "flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-colors",
+              active ? "border-transparent bg-primary text-primary-foreground" : "bg-card/60 text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
           >
-            <Icon className="h-4 w-4" />
-            {label}
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="truncate">{d.nav[key]}</span>
           </Link>
         );
       })}
