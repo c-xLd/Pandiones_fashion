@@ -41,6 +41,8 @@ export default async function ReplicaPage() {
       .eq("organization_id", org)
       .eq("job_type", "replica_generation")
       .is("dismissed_at", null)
+      // Jobs the user cancelled are gone on purpose; don't show them as failures.
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(24),
   ]);
@@ -118,7 +120,7 @@ export default async function ReplicaPage() {
                       title={result.products?.sku ?? t.result}
                       subtitle={new Date(result.created_at).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}
                     />
-                  ) : j.status === "failed" || j.status === "cancelled" ? (
+                  ) : j.status === "failed" ? (
                     <FailedTile jobId={j.id} aspect={aspect(j)} reason={jobErrorLabel(d, j.error_code) ?? j.error_code ?? ""} canEdit={canEdit} />
                   ) : (
                     <ActiveTile
