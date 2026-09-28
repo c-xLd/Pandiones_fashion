@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
 import { discardEmptyProduct, quickCreateProduct } from "@/server/actions/products";
 import { discardEmptyModel, quickCreateModel } from "@/server/actions/models";
-import { uploadFile } from "./upload-client";
+import { snapshotFiles, uploadFile } from "./upload-client";
 import { useI18n } from "@/lib/i18n/client";
 import { fmt } from "@/lib/i18n/config";
 import { cn } from "@/lib/utils";
@@ -123,7 +123,12 @@ export function QuickAddForm({ kind }: { kind: "product" | "model" }) {
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            if (!busy) add(e.dataTransfer.files);
+            if (busy) return;
+            const dropped = Array.from(e.dataTransfer.files);
+            void snapshotFiles(dropped).then(({ files, unreadable }) => {
+              if (unreadable) setError(d.uploader.unreadable);
+              add(files);
+            });
           }}
           className={cn("grid grid-cols-3 gap-2 rounded-2xl border border-dashed p-2 transition-colors sm:grid-cols-4", dragging && "border-ring bg-accent/40")}
         >
@@ -173,8 +178,12 @@ export function QuickAddForm({ kind }: { kind: "product" | "model" }) {
           tabIndex={-1}
           aria-label={t.addPhotos}
           onChange={(e) => {
-            if (e.target.files) add(e.target.files);
-            e.target.value = "";
+            const input = e.currentTarget;
+            void snapshotFiles(input.files).then(({ files, unreadable }) => {
+              input.value = "";
+              if (unreadable) setError(d.uploader.unreadable);
+              add(files);
+            });
           }}
         />
       </div>

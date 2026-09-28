@@ -11,7 +11,7 @@ import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
 import { createPhotoSession } from "@/server/actions/generation";
 import { discardEmptyProduct, quickCreateProduct } from "@/server/actions/products";
 import { castRandomModel, discardCastModel, discardEmptyModel, quickCreateModel } from "@/server/actions/models";
-import { uploadFile } from "@/components/studio/upload-client";
+import { snapshotFiles, uploadFile } from "@/components/studio/upload-client";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n/client";
@@ -463,9 +463,11 @@ export function Composer({ products, models, disabledReason, initialProductId, i
           className="sr-only"
           tabIndex={-1}
           aria-label={t.uploadGarment}
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = "";
+          onChange={async (e) => {
+            const input = e.currentTarget;
+            const { files, unreadable } = await snapshotFiles(input.files);
+            input.value = "";
+            if (unreadable) setError(d.uploader.unreadable);
             if (files.length) void uploadGarment(files);
           }}
         />
@@ -476,10 +478,12 @@ export function Composer({ products, models, disabledReason, initialProductId, i
           className="sr-only"
           tabIndex={-1}
           aria-label={t.uploadModel}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file) void uploadModel(file);
+          onChange={async (e) => {
+            const input = e.currentTarget;
+            const { files, unreadable } = await snapshotFiles(input.files);
+            input.value = "";
+            if (unreadable) setError(d.uploader.unreadable);
+            if (files[0]) void uploadModel(files[0]);
           }}
         />
       </div>

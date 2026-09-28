@@ -8,7 +8,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Progress } from "@/components/ui/progress";
 import { ASSET_ROLES, type AssetRole } from "@/lib/domain/schemas";
 import { IMAGE_MIME_TYPES, parseBulkFileName, validateDeclaredImage } from "@/lib/domain/files";
-import { runPool, uploadFile } from "./upload-client";
+import { runPool, snapshotFiles, uploadFile } from "./upload-client";
 import { useI18n } from "@/lib/i18n/client";
 import { fmt } from "@/lib/i18n/config";
 
@@ -86,7 +86,7 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          addFiles(e.dataTransfer.files);
+          void snapshotFiles(Array.from(e.dataTransfer.files)).then(({ files }) => addFiles(files));
         }}
         className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center transition-colors ${dragging ? "border-primary bg-accent" : ""}`}
       >
@@ -103,8 +103,11 @@ export function ImageUploader({ target, entityId }: { target: "products" | "mode
           className="sr-only"
           aria-label={d.uploader.chooseLabel}
           onChange={(e) => {
-            if (e.target.files) addFiles(e.target.files);
-            e.target.value = "";
+            const input = e.currentTarget;
+            void snapshotFiles(input.files).then(({ files }) => {
+              input.value = "";
+              addFiles(files);
+            });
           }}
         />
         <p className="mt-2 text-xs text-muted-foreground">{d.uploader.hint}</p>

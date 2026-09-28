@@ -149,3 +149,34 @@ export async function runPool<T>(items: T[], concurrency: number, fn: (item: T) 
   });
   await Promise.all(workers);
 }
+
+function sniffType(bytes: Uint8Array): string {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45) return "image/webp";
+  return "";
+}
+
+/**
+ * Copy picked files into memory immediately, before the input is reset or
+ * any await happens. On Android, files handed over by the picker (content
+ * providers such as Google Photos or Files) can become unreadable once the
+ * input is cleared or after a delay; the in-memory copy stays valid. Also
+ * fills in a missing MIME type from the file's magic bytes.
+ */
+export async function snapshotFiles(list: FileList | File[] | null | undefined): Promise<{ files: File[]; unreadable: number }> {
+  const picked = Array.from(list ?? []);
+  const results = await Promise.all(
+    picked.map(async (file) => {
+      try {
+        const buffer = await file.arrayBuffer();
+        const type = file.type || sniffType(new Uint8Array(buffer.slice(0, 12)));
+        return new File([buffer], file.name, { type, lastModified: file.lastModified });
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const files = results.filter((f): f is File => f !== null);
+  return { files, unreadable: picked.length - files.length };
+}

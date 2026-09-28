@@ -7,7 +7,7 @@ import { MAX_REPLICA_SCENES, IMAGE_ENGINES, type ImageEngine } from "@/lib/domai
 import { createReplicaBatch } from "@/server/actions/generation";
 import { discardEmptyProduct, quickCreateProduct } from "@/server/actions/products";
 import { discardEmptyModel, quickCreateModel } from "@/server/actions/models";
-import { uploadFile } from "@/components/studio/upload-client";
+import { snapshotFiles, uploadFile } from "@/components/studio/upload-client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -280,9 +280,11 @@ export function ReplicaStudio({
         className="sr-only"
         tabIndex={-1}
         aria-label={t.uploadProduct}
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
+        onChange={async (e) => {
+          const input = e.currentTarget;
+          const { files, unreadable } = await snapshotFiles(input.files);
+          input.value = "";
+          if (unreadable) setError(d.uploader.unreadable);
           if (files.length) void addProduct(files);
         }}
       />
@@ -293,10 +295,12 @@ export function ReplicaStudio({
         className="sr-only"
         tabIndex={-1}
         aria-label={t.uploadModel}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (file) void addModel(file);
+        onChange={async (e) => {
+          const input = e.currentTarget;
+          const { files, unreadable } = await snapshotFiles(input.files);
+          input.value = "";
+          if (unreadable) setError(d.uploader.unreadable);
+          if (files[0]) void addModel(files[0]);
         }}
       />
       <input
@@ -307,9 +311,11 @@ export function ReplicaStudio({
         className="sr-only"
         tabIndex={-1}
         aria-label={t.addReference}
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
+        onChange={async (e) => {
+          const input = e.currentTarget;
+          const { files, unreadable } = await snapshotFiles(input.files);
+          input.value = "";
+          if (unreadable) setError(d.uploader.unreadable);
           if (files.length) void addScenes(files);
         }}
       />

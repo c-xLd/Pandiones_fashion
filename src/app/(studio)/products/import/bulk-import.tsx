@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ASSET_ROLES, type AssetRole } from "@/lib/domain/schemas";
 import { IMAGE_MIME_TYPES, parseBulkFileName, validateDeclaredImage } from "@/lib/domain/files";
 import { ensureProductsForSkus } from "@/server/actions/products";
-import { runPool, uploadFile } from "@/components/studio/upload-client";
+import { runPool, snapshotFiles, uploadFile } from "@/components/studio/upload-client";
 import { useI18n } from "@/lib/i18n/client";
 import { fmt } from "@/lib/i18n/config";
 
@@ -37,7 +37,7 @@ export function BulkImport() {
 
   const update = (key: string, patch: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
-  function addFiles(files: FileList) {
+  function addFiles(files: FileList | File[]) {
     const next: Row[] = [];
     for (const file of Array.from(files).slice(0, MAX_FILES - rows.length)) {
       const parsed = parseBulkFileName(file.name);
@@ -105,8 +105,11 @@ export function BulkImport() {
             className="sr-only"
             aria-label={b.chooseLabel}
             onChange={(e) => {
-              if (e.target.files) addFiles(e.target.files);
-              e.target.value = "";
+              const input = e.currentTarget;
+              void snapshotFiles(input.files).then(({ files }) => {
+                input.value = "";
+                addFiles(files);
+              });
             }}
           />
           <span className="text-sm text-muted-foreground">
