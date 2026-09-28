@@ -7,7 +7,10 @@ import { photoSessionRequestSchema } from "@/lib/domain/schemas";
 describe("inferGarmentType", () => {
   it("recognises Turkish and English names", () => {
     expect(inferGarmentType("Keten gömlek")).toBe("top");
-    expect(inferGarmentType(null, "bralette")).toBe("top");
+    expect(inferGarmentType(null, "bralette")).toBe("lingerie");
+    expect(inferGarmentType("Dantelli sütyen takımı")).toBe("lingerie");
+    expect(inferGarmentType("Lace bra set")).toBe("lingerie");
+    expect(inferGarmentType("Saten gecelik")).toBe("lingerie");
     expect(inferGarmentType("Yüksek bel pantolon")).toBe("bottom");
     expect(inferGarmentType("Midi etek")).toBe("bottom");
     expect(inferGarmentType("shirt dress")).toBe("dress");
@@ -30,6 +33,9 @@ describe("planOutfit", () => {
     expect(planOutfit("bottom", "x")).toMatch(/t-shirt|tank|camisole|top/);
     expect(planOutfit("dress", "x")).not.toMatch(/jeans|trousers|skirt/);
     expect(planOutfit("shoes", "x")).not.toMatch(/sneakers|pumps|sandals|boots|loafers/);
+    const lingerie = planOutfit("lingerie", "x");
+    expect(lingerie).toMatch(/^no other clothing/);
+    expect(lingerie).not.toMatch(/denim|trousers|t-shirt|tank top|sneakers|belt/);
   });
 });
 

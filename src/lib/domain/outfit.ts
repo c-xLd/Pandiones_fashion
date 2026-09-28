@@ -7,20 +7,22 @@ import { seededRandom } from "./photo-session";
  * Pure and seeded by the request's idempotency key.
  */
 
-export const GARMENT_TYPES = ["top", "bottom", "dress", "outerwear", "shoes", "accessory"] as const;
+export const GARMENT_TYPES = ["top", "bottom", "dress", "outerwear", "lingerie", "shoes", "accessory"] as const;
 export type GarmentType = (typeof GARMENT_TYPES)[number];
 
 const KEYWORDS: Record<GarmentType, RegExp> = {
-  // Checked in this order; dress before top so "shirt dress" is a dress.
+  // Checked in ORDER below: lingerie first (a bra set is not a top), dress before top.
+  lingerie:
+    /\b(lingerie|bra|bralette|brief|briefs|panty|panties|thong|underwear|corset|bustier|babydoll|garter|negligee|chemise)\b|iç giyim|iç çamaşır|sütyen|külot|tanga|string|büstiyer|korse|jartiyer|babydoll|gecelik|bralet/i,
   dress: /\b(dress|gown|jumpsuit|romper|playsuit|slip dress)\b|elbise|tulum|abiye/i,
   outerwear: /\b(jacket|coat|blazer|parka|trench|cardigan|vest|gilet)\b|ceket|mont|kaban|trenç|hırka|yelek|blazer/i,
   bottom: /\b(pants?|trousers|jeans|skirt|shorts|leggings|joggers)\b|pantolon|etek|şort|tayt|eşofman alt|jean/i,
   shoes: /\b(shoes?|sneakers?|boots?|heels?|sandals?|loafers?|pumps?)\b|ayakkabı|bot|çizme|topuklu|sandalet|terlik/i,
   accessory: /\b(bag|handbag|hat|cap|scarf|belt|necklace|earrings?|bracelet|sunglasses|jewelry|jewellery)\b|çanta|şapka|atkı|şal|kemer|kolye|küpe|bileklik|gözlük|takı/i,
-  top: /\b(top|shirt|t-?shirt|tee|blouse|sweater|jumper|hoodie|sweatshirt|tank|camisole|bodysuit|polo|crop|bra|bralette|corset)\b|gömlek|tişört|bluz|kazak|body|atlet|büstiyer|sütyen|crop/i,
+  top: /\b(top|shirt|t-?shirt|tee|blouse|sweater|jumper|hoodie|sweatshirt|tank|camisole|bodysuit|polo|crop)\b|gömlek|tişört|bluz|kazak|body|atlet|crop/i,
 };
 
-const ORDER: GarmentType[] = ["dress", "outerwear", "bottom", "shoes", "accessory", "top"];
+const ORDER: GarmentType[] = ["lingerie", "dress", "outerwear", "bottom", "shoes", "accessory", "top"];
 
 /** Best-effort garment type from catalog/AI category and title; defaults to "top". */
 export function inferGarmentType(...texts: (string | null | undefined)[]): GarmentType {
@@ -65,6 +67,11 @@ export function planOutfit(type: GarmentType, seed: string): string {
   const rand = seededRandom(`outfit:${seed}`);
   function pick(list: readonly string[]): string {
     return list[Math.floor(rand() * list.length)] as string;
+  }
+  // Lingerie is shown on its own: nothing layered over it, at most fine jewellery.
+  if (type === "lingerie") {
+    const jewellery = PIECES.accessories.filter((a) => !a.includes("belt"));
+    return `no other clothing added over or around the set (no jeans, skirt, top or jacket), barefoot or simple nude heels, only ${pick(jewellery)}`;
   }
   const items: string[] = [];
   if (type === "top" || type === "outerwear") items.push(pick(PIECES.bottom));

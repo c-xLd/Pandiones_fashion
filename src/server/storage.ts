@@ -16,6 +16,8 @@ export const paths = {
     `${org}/products/${productId}/source/${randomUUID()}.${EXTENSION_FOR_MIME[mime] ?? "bin"}`,
   modelSource: (org: string, modelId: string, mime: string) =>
     `${org}/models/${modelId}/source/${randomUUID()}.${EXTENSION_FOR_MIME[mime] ?? "bin"}`,
+  reference: (org: string, batchId: string, mime: string) =>
+    `${org}/references/${batchId}/${randomUUID()}.${EXTENSION_FOR_MIME[mime] ?? "bin"}`,
   result: (org: string, jobId: string, mime: string) =>
     `${org}/results/${jobId}/${randomUUID()}.${EXTENSION_FOR_MIME[mime] ?? "bin"}`,
   thumbnailFor: (path: string) => path.replace(/\.[a-z0-9]+$/i, "") + ".thumb.webp",

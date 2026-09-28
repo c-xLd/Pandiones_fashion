@@ -158,7 +158,7 @@ export const imageGenerationHandler: JobHandler = {
   },
 };
 
-async function recordFailedCall(
+export async function recordFailedCall(
   admin: Parameters<typeof recordUsage>[0],
   job: JobRow,
   provider: string,

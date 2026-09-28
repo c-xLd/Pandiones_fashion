@@ -8,11 +8,14 @@ import {
   imageJobConfigSchema,
   photoSessionRequestSchema,
   presetInputSchema,
+  replicaRequestSchema,
   reviewInputSchema,
   shootRequestSchema,
   shootStyleSchema,
   type ImageJobConfig,
   type PhotoSessionRequest,
+  type ReplicaJobConfig,
+  type ReplicaRequest,
   type ShootRequest,
 } from "@/lib/domain/schemas";
 import { planPhotoSession, randomModelPersona } from "@/lib/domain/photo-session";
@@ -20,7 +23,9 @@ import { inferGarmentType, planOutfit } from "@/lib/domain/outfit";
 import { engineModel, geminiConfig, imageGenerationConfig } from "@/lib/env";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exportFileName } from "@/lib/domain/files";
-import { BUCKET, removeObjects } from "../storage";
+import { BUCKET, downloadObject, paths, removeObjects } from "../storage";
+import { isReferencePath, nearestAspectRatio } from "@/lib/domain/replica";
+import sharp from "sharp";
 import type { ActionResult, JobRow, ResultRow } from "@/lib/types";
 import { requireOrgContext } from "../context";
 import { UserFacingError, check, runAction, toActionError } from "../action";
@@ -539,5 +544,106 @@ export async function deleteResults(input: z.input<typeof deleteResultsSchema>):
     revalidatePath("/");
     revalidatePath("/library");
     return { deleted: rows.length };
+  });
+}
+
+/**
+ * Replica batch: one job per uploaded reference photo; each recreates that
+ * photo 1:1 with the chosen model wearing the chosen product (no mixing of
+ * references). Reference paths must be this organization's uploads.
+ */
+export async function createReplicaBatch(input: ReplicaRequest): Promise<ActionResult<{ batchId: string; jobCount: number }>> {
+  return runAction("createReplicaBatch", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("generate", ctx.userId);
+    const req = replicaRequestSchema.parse(input);
+    const org = ctx.org.organizationId;
+    const cfg = imageGenerationConfig();
+    for (const path of req.scenePaths) {
+      if (!isReferencePath(path, org)) throw new UserFacingError("invalidUploadPath");
+    }
+
+    const product = check(
+      await ctx.supabase.from("products").select("id, status").eq("id", req.productId).eq("organization_id", org).maybeSingle(),
+      "Load product",
+    ) as { id: string; status: string } | null;
+    if (!product) throw new UserFacingError("productNotFound");
+    if (product.status === "archived") throw new UserFacingError("productArchived");
+    const assets = check(
+      await ctx.supabase.from("product_assets").select("id, role, created_at").eq("product_id", product.id).eq("organization_id", org),
+      "Load assets",
+    ) as { id: string; role: string; created_at: string }[];
+    if (!assets.length) throw new UserFacingError("invalidProductRefs");
+
+    let modelRefIds: string[] = [];
+    if (req.modelProfileId) {
+      const model = check(
+        await ctx.supabase.from("model_profiles").select("id, status").eq("id", req.modelProfileId).eq("organization_id", org).maybeSingle(),
+        "Load model",
+      ) as { id: string; status: string } | null;
+      if (!model) throw new UserFacingError("modelNotFound");
+      if (model.status === "retired") throw new UserFacingError("modelProfileRetired");
+      const modelAssets = check(
+        await ctx.supabase
+          .from("model_profile_assets")
+          .select("id")
+          .eq("model_profile_id", model.id)
+          .eq("organization_id", org)
+          .order("is_primary", { ascending: false })
+          .order("created_at")
+          .limit(1),
+        "Load model assets",
+      ) as { id: string }[];
+      modelRefIds = modelAssets.map((a) => a.id);
+    }
+    // Scene + model take two of the (at most four) inputs; the garment gets the rest, max two views.
+    const productRefIds = [...assets]
+      .sort((a, b) => SESSION_REF_ORDER.indexOf(a.role) - SESSION_REF_ORDER.indexOf(b.role) || a.created_at.localeCompare(b.created_at))
+      .slice(0, Math.max(1, Math.min(2, cfg.maxReferenceImages - 1 - modelRefIds.length)))
+      .map((a) => a.id);
+
+    // Output aspect ratio follows each reference photo.
+    const dims = await Promise.all(
+      req.scenePaths.map(async (path) => {
+        try {
+          const meta = await sharp(await downloadObject(path)).metadata();
+          return { width: meta.width ?? 0, height: meta.height ?? 0 };
+        } catch {
+          throw new UserFacingError("uploadNotFound");
+        }
+      }),
+    );
+
+    const batchId = randomUUID();
+    const { locale } = await getI18n();
+    const model = engineModel(cfg, req.engine);
+    const jobs: EnqueueInput[] = req.scenePaths.map((scenePath, i) => {
+      const config: ReplicaJobConfig = {
+        kind: "replica",
+        scenePath,
+        sceneThumbnailPath: paths.thumbnailFor(scenePath),
+        aspectRatio: nearestAspectRatio(dims[i]!.width, dims[i]!.height),
+        imageSize: req.imageSize,
+        productReferenceAssetIds: productRefIds,
+        modelReferenceAssetIds: modelRefIds,
+        instructions: req.instructions,
+        language: locale,
+      };
+      return {
+        jobType: "replica_generation",
+        provider: cfg.provider,
+        model,
+        idempotencyKey: `${req.idempotencyKey}:replica:${i}`,
+        productId: product.id,
+        modelProfileId: req.modelProfileId,
+        batchId,
+        inputAssetRefs: [...productRefIds.map((id) => ({ kind: "product_asset", id })), ...modelRefIds.map((id) => ({ kind: "model_asset", id }))],
+        config,
+      };
+    });
+    const { jobs: rows } = await enqueueJobs(ctx, jobs);
+    await audit({ organizationId: org, actorId: ctx.userId, action: "replica.created", entityType: "product", entityId: product.id, metadata: { batchId, jobs: rows.length, model } });
+    revalidatePath("/replica");
+    return { batchId: rows[0]?.batch_id ?? batchId, jobCount: rows.length };
   });
 }

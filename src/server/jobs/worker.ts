@@ -8,6 +8,7 @@ import type { JobType } from "@/lib/domain/schemas";
 import type { JobRow } from "@/lib/types";
 import { patchForFailure, patchForOutcome, type HandlerOutcome, type JobPatch } from "./policy";
 import { analysisHandler } from "./handlers/analysis";
+import { replicaHandler } from "./handlers/replica";
 import { imageGenerationHandler } from "./handlers/image-generation";
 import { qualityReviewHandler } from "./handlers/quality-review";
 import { modelPortraitHandler } from "./handlers/model-portrait";
@@ -34,6 +35,7 @@ export const HANDLERS: Record<JobType, JobHandler> = {
   quality_review: qualityReviewHandler,
   model_portrait: modelPortraitHandler,
   video_generation: videoGenerationHandler,
+  replica_generation: replicaHandler,
 };
 
 export interface TickSummary {

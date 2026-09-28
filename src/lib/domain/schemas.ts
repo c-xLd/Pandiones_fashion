@@ -23,6 +23,7 @@ export const JOB_TYPES = [
   "quality_review",
   "video_generation",
   "model_portrait",
+  "replica_generation",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
@@ -152,6 +153,35 @@ export const photoSessionRequestSchema = z.object({
   idempotencyKey: z.string().min(8).max(100),
 });
 export type PhotoSessionRequest = z.input<typeof photoSessionRequestSchema>;
+
+/** Up to four reference photos, each recreated 1:1 with the chosen model and product. */
+export const MAX_REPLICA_SCENES = 4;
+
+export const replicaRequestSchema = z.object({
+  productId: z.uuid(),
+  /** null keeps the person from each reference photo and only swaps the garment. */
+  modelProfileId: z.uuid().nullable(),
+  scenePaths: z.array(z.string().max(300)).min(1, "selectReference").max(MAX_REPLICA_SCENES),
+  imageSize: z.enum(["2K", "4K"]).default("2K"),
+  engine: z.enum(IMAGE_ENGINES).default("auto"),
+  instructions: z.string().trim().max(1000).default(""),
+  idempotencyKey: z.string().min(8).max(100),
+});
+export type ReplicaRequest = z.input<typeof replicaRequestSchema>;
+
+/** Snapshot stored on each replica_generation job. */
+export const replicaJobConfigSchema = z.object({
+  kind: z.literal("replica"),
+  scenePath: z.string().max(300),
+  sceneThumbnailPath: z.string().max(300).nullable(),
+  aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
+  imageSize: z.enum(IMAGE_SIZES),
+  productReferenceAssetIds: z.array(z.uuid()).min(1),
+  modelReferenceAssetIds: z.array(z.uuid()),
+  instructions: z.string().max(1000).default(""),
+  language: z.enum(["en", "tr"]).default("en"),
+});
+export type ReplicaJobConfig = z.infer<typeof replicaJobConfigSchema>;
 
 /** Snapshot stored on each image_generation job. */
 export const imageJobConfigSchema = z.object({

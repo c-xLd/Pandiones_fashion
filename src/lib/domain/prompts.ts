@@ -229,6 +229,45 @@ export function buildConciseProductShotPrompt(input: {
   return parts.join(" ");
 }
 
+/**
+ * Replica: recreate a reference photo 1:1 (pose, framing, background, light)
+ * while swapping in the chosen model and the exact product. Image numbering
+ * follows the provider: 0-based "image N" (FLUX) or "Image #N" (Gemini).
+ */
+export function buildReplicaPrompt(input: {
+  product: ProductContext;
+  /** Positions in the request (1-based) of the scene, garment and model images. */
+  scene: number;
+  garments: number[];
+  models: number[];
+  format: "detailed" | "concise";
+  instructions?: string;
+}): string {
+  const img = (n: number) => (input.format === "concise" ? `image ${n - 1}` : `Image #${n}`);
+  const list = (ns: number[]) => ns.map(img).join(" and ");
+  const scene = img(input.scene);
+  const parts: string[] = [];
+  parts.push(
+    `Recreate ${scene} as faithfully as possible: exactly the same pose and body position, hand placement, head angle, camera angle, framing and crop, background, props, lighting and colour grading.`,
+  );
+  parts.push("Only these things change:");
+  if (input.models.length) {
+    parts.push(
+      `1) The person becomes the woman in ${list(input.models)}: keep her face unchanged (same face shape, eyes, eyebrows, nose, lips, skin tone and complexion) and her hair colour and style; do not beautify, age or alter her features.`,
+    );
+  } else {
+    parts.push(`1) Keep the same person as in ${scene}.`);
+  }
+  parts.push(
+    `2) She wears the garment shown in ${list(input.garments)} (${input.product.title}) in place of the corresponding garment in ${scene}, reproduced exactly: identical colours, fabric texture, pattern and print placement, lace, straps, seams, closures, trims, cut and length; nothing added, removed or redesigned. All other clothing, shoes and accessories stay as in ${scene}.`,
+  );
+  parts.push(`Everything else must stay identical to ${scene}. Do not combine it with other scenes.`);
+  if (input.instructions) parts.push(input.instructions);
+  parts.push(REALISM);
+  parts.push("Tasteful, non-explicit fashion photograph. The model is an adult (21+).");
+  return parts.join(" ");
+}
+
 export function buildModelPortraitPrompt(model: ModelContext, instructions: string, hasReferences: boolean): string {
   const parts = [
     "Create a photorealistic studio reference portrait of a fashion model for a model casting card.",

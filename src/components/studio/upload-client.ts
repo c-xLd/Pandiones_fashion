@@ -1,10 +1,10 @@
 "use client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { AssetRole } from "@/lib/domain/schemas";
-import { createUploadTarget, finalizeProductAsset } from "@/server/actions/products";
+import { createUploadTarget, finalizeProductAsset, finalizeReferenceImage } from "@/server/actions/products";
 import { finalizeModelAsset } from "@/server/actions/models";
 
-export type UploadOutcome = { ok: true; warning: string | null } | { ok: false; error: string };
+export type UploadOutcome = { ok: true; warning: string | null; path?: string; thumbnailPath?: string; width?: number; height?: number } | { ok: false; error: string };
 
 /** Longest edge sent to the server; larger phone photos are downscaled in the browser. */
 const MAX_UPLOAD_EDGE = 2560;
@@ -101,7 +101,7 @@ export async function prepareImageForUpload(file: File): Promise<File> {
  * 3) ask the server to validate the real bytes, hash, thumbnail and register the asset
  */
 export async function uploadFile(
-  target: "products" | "models",
+  target: "products" | "models" | "references",
   entityId: string,
   file: File,
   role: AssetRole,
@@ -125,6 +125,11 @@ export async function uploadFile(
   if (error) ({ error } = await put().catch((e: unknown) => ({ error: e instanceof Error ? e : new Error(String(e)) })));
   if (error) return { ok: false, error: storageErrorTemplate.replace("{message}", error.message) };
   onPhase?.("processing");
+  if (target === "references") {
+    const ref = await finalizeReferenceImage({ batchId: entityId, path: t.data.path });
+    if (!ref.ok) return { ok: false, error: ref.error };
+    return { ok: true, warning: null, ...ref.data };
+  }
   const res =
     target === "products"
       ? await finalizeProductAsset({ productId: entityId, path: t.data.path, role, originalFilename: file.name })

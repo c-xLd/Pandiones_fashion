@@ -17,6 +17,7 @@ import { enforceRateLimit } from "../rate-limit";
 import { audit } from "../audit";
 import { BUCKET, assertUploadPath, downloadObject, paths, processImage, removeObjects, uploadObject } from "../storage";
 import { enqueueJobs } from "../jobs/enqueue";
+import { isReferencePath } from "@/lib/domain/replica";
 
 export type ProductFormState = { ok: boolean; error?: string; message?: string; fieldErrors?: Record<string, string[]> } | null;
 
@@ -126,7 +127,8 @@ export async function deleteProduct(productId: string): Promise<ActionResult> {
 // Uploads: browser -> signed upload URL -> finalize (server validates bytes)
 // ---------------------------------------------------------------------------
 const uploadTargetSchema = z.object({
-  target: z.enum(["products", "models"]),
+  target: z.enum(["products", "models", "references"]),
+  /** Product/model id, or a client-generated batch id for reference photos. */
   entityId: z.uuid(),
   fileName: z.string().min(1).max(255),
   size: z.number().int().positive(),
@@ -143,17 +145,22 @@ export async function createUploadTarget(
     const declared = validateDeclaredImage({ name: data.fileName, size: data.size, type: data.mimeType });
     if (!declared.ok) throw new UserFacingError(declared.error, declared.vars);
 
-    const table = data.target === "products" ? "products" : "model_profiles";
-    const owner = check(
-      await ctx.supabase.from(table).select("id").eq("id", data.entityId).eq("organization_id", ctx.org.organizationId).maybeSingle(),
-      "Load target",
-    );
-    if (!owner) throw new UserFacingError("targetNotFound");
+    // Reference photos belong to no record: they are namespaced by org and batch.
+    if (data.target !== "references") {
+      const table = data.target === "products" ? "products" : "model_profiles";
+      const owner = check(
+        await ctx.supabase.from(table).select("id").eq("id", data.entityId).eq("organization_id", ctx.org.organizationId).maybeSingle(),
+        "Load target",
+      );
+      if (!owner) throw new UserFacingError("targetNotFound");
+    }
 
     const path =
       data.target === "products"
         ? paths.productSource(ctx.org.organizationId, data.entityId, declared.mimeType)
-        : paths.modelSource(ctx.org.organizationId, data.entityId, declared.mimeType);
+        : data.target === "models"
+          ? paths.modelSource(ctx.org.organizationId, data.entityId, declared.mimeType)
+          : paths.reference(ctx.org.organizationId, data.entityId, declared.mimeType);
     const signed = await getSupabaseAdmin().storage.from(BUCKET).createSignedUploadUrl(path);
     if (signed.error || !signed.data) throw new Error(`createSignedUploadUrl failed: ${signed.error?.message}`);
     return { path: signed.data.path, token: signed.data.token, bucket: BUCKET };
@@ -410,5 +417,37 @@ export async function discardEmptyProduct(productId: string): Promise<ActionResu
       "Discard product",
     );
     return undefined;
+  });
+}
+
+const finalizeReferenceSchema = z.object({ batchId: z.uuid(), path: z.string().max(300) });
+
+/**
+ * Validate an uploaded reference photo (real image bytes, size limits) and
+ * create its thumbnail. Returns the paths used by replica jobs.
+ */
+export async function finalizeReferenceImage(
+  input: z.input<typeof finalizeReferenceSchema>,
+): Promise<ActionResult<{ path: string; thumbnailPath: string; width: number; height: number }>> {
+  return runAction("finalizeReferenceImage", async () => {
+    const ctx = await requireOrgContext("editor");
+    const data = finalizeReferenceSchema.parse(input);
+    const org = ctx.org.organizationId;
+    if (!isReferencePath(data.path, org) || !data.path.startsWith(`${org}/references/${data.batchId}/`)) {
+      throw new UserFacingError("invalidUploadPath");
+    }
+    const bytes = await downloadObject(data.path).catch(() => {
+      throw new UserFacingError("uploadNotFound");
+    });
+    let processed;
+    try {
+      processed = await processImage(bytes);
+    } catch (error) {
+      await removeObjects([data.path]);
+      throw error;
+    }
+    const thumbnailPath = paths.thumbnailFor(data.path);
+    await uploadObject(thumbnailPath, processed.thumbnail, "image/webp");
+    return { path: data.path, thumbnailPath, width: processed.width, height: processed.height };
   });
 }

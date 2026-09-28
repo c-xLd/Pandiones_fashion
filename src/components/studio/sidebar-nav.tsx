@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Copy,
   Sparkles,
   Shirt,
   UserRound,
@@ -23,6 +24,7 @@ type NavItem = { href: string; key: keyof Dictionary["nav"]; icon: typeof Shirt 
 /** Always visible in the top bar on large screens. */
 export const NAV_PRIMARY: NavItem[] = [
   { href: "/", key: "create", icon: Sparkles },
+  { href: "/replica", key: "replica", icon: Copy },
   { href: "/products", key: "products", icon: Shirt },
   { href: "/models", key: "models", icon: UserRound },
   { href: "/review", key: "review", icon: ClipboardCheck },

@@ -23,7 +23,7 @@ import { Composer } from "./_create/composer";
 export const generateMetadata = pageMetadata((d) => d.create.metaTitle);
 
 const GALLERY_LIMIT = 60;
-const GENERATION_TYPES = ["image_generation", "video_generation", "model_portrait"] as const;
+const GENERATION_TYPES = ["image_generation", "video_generation", "model_portrait", "replica_generation"] as const;
 
 /** "3:4" → "3/4" for CSS aspect-ratio; falls back to portrait. */
 function cssAspect(value: unknown, fallback = "3/4"): string {
