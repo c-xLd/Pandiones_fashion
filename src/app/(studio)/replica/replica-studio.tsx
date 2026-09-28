@@ -3,7 +3,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Loader2, Plus, UserRound, X, Copy } from "lucide-react";
 import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
-import { MAX_REPLICA_SCENES, IMAGE_ENGINES, type ImageEngine } from "@/lib/domain/schemas";
+import { MAX_REPLICA_SCENES, IMAGE_ENGINES, OUTPUT_QUALITIES, type ImageEngine, type OutputQuality } from "@/lib/domain/schemas";
 import { createReplicaBatch } from "@/server/actions/generation";
 import { discardEmptyProduct, quickCreateProduct } from "@/server/actions/products";
 import { discardEmptyModel, quickCreateModel } from "@/server/actions/models";
@@ -50,7 +50,7 @@ export function ReplicaStudio({
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [batchId] = useState(() => crypto.randomUUID());
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [quality, setQuality] = useState<"2K" | "4K">("2K");
+  const [quality, setQuality] = useState<OutputQuality>("2K");
   const [engine, setEngine] = useState<ImageEngine>("auto");
   const [instructions, setInstructions] = useState("");
   const [busy, setBusy] = useState<"product" | "model" | null>(null);
@@ -244,9 +244,12 @@ export function ReplicaStudio({
 
       <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
         <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={1000} rows={2} placeholder={t.instructions} aria-label={t.instructions} />
-        <NativeSelect aria-label={d.create.quality} value={quality} onChange={(e) => setQuality(e.target.value as "2K" | "4K")}>
-          <option value="2K">2K</option>
-          <option value="4K">4K</option>
+        <NativeSelect aria-label={d.create.quality} value={quality} onChange={(e) => setQuality(e.target.value as OutputQuality)}>
+          {OUTPUT_QUALITIES.map((q) => (
+            <option key={q} value={q}>
+              {d.create.qualities[q]}
+            </option>
+          ))}
         </NativeSelect>
         <NativeSelect aria-label={d.create.engine} value={engine} onChange={(e) => setEngine(e.target.value as ImageEngine)}>
           {IMAGE_ENGINES.map((e) => (

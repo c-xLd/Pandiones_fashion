@@ -45,6 +45,19 @@ export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIOS)[number];
 
 /** Output sizes documented for Gemini ImageConfig.imageSize. Model support varies. */
 export const IMAGE_SIZES = ["1K", "2K", "4K"] as const;
+
+/**
+ * Output quality offered in the studio. "eco" renders at 1K and upscales to
+ * 2K: about half the provider cost (roughly twice as many images from a free
+ * daily allowance), with less fine detail than a native 2K render.
+ */
+export const OUTPUT_QUALITIES = ["eco", "2K", "4K"] as const;
+export type OutputQuality = (typeof OUTPUT_QUALITIES)[number];
+
+/** Provider render size and optional upscale target for a quality choice. */
+export function renderPlan(quality: OutputQuality): { imageSize: (typeof IMAGE_SIZES)[number]; upscaleTo: (typeof IMAGE_SIZES)[number] | null } {
+  return quality === "eco" ? { imageSize: "1K", upscaleTo: "2K" } : { imageSize: quality, upscaleTo: null };
+}
 export type ImageSize = (typeof IMAGE_SIZES)[number];
 
 /** Veo aspect ratios / resolutions documented in GenerateVideosConfig typings. */
@@ -143,8 +156,8 @@ export const photoSessionRequestSchema = z.object({
   locations: z.array(z.enum(SESSION_LOCATIONS)).min(1, "selectLocation").max(MAX_SESSION_LOCATIONS),
   count: z.coerce.number().int().min(1).max(MAX_SESSION_SHOTS),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
-  /** 2K is generated natively; 4K is the 2K output upscaled when the model cannot produce 4K. */
-  imageSize: z.enum(["2K", "4K"]).default("2K"),
+  /** 2K is generated natively; 4K is the 2K output upscaled when the model cannot produce 4K; eco is 1K upscaled to 2K. */
+  imageSize: z.enum(OUTPUT_QUALITIES).default("2K"),
   /** What the uploaded product is; "auto" infers it from the category/title. */
   garmentType: z.enum(["auto", ...GARMENT_TYPES]).default("auto"),
   /** Generation engine: auto/standard = the configured model; high = higher-quality model when available. */
@@ -162,7 +175,7 @@ export const replicaRequestSchema = z.object({
   /** null keeps the person from each reference photo and only swaps the garment. */
   modelProfileId: z.uuid().nullable(),
   scenePaths: z.array(z.string().max(300)).min(1, "selectReference").max(MAX_REPLICA_SCENES),
-  imageSize: z.enum(["2K", "4K"]).default("2K"),
+  imageSize: z.enum(OUTPUT_QUALITIES).default("2K"),
   engine: z.enum(IMAGE_ENGINES).default("auto"),
   instructions: z.string().trim().max(1000).default(""),
   idempotencyKey: z.string().min(8).max(100),
@@ -176,6 +189,8 @@ export const replicaJobConfigSchema = z.object({
   sceneThumbnailPath: z.string().max(300).nullable(),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
   imageSize: z.enum(IMAGE_SIZES),
+  /** Upscale the render to this size afterwards (eco quality). */
+  upscaleTo: z.enum(IMAGE_SIZES).nullable().default(null),
   productReferenceAssetIds: z.array(z.uuid()).min(1),
   modelReferenceAssetIds: z.array(z.uuid()),
   instructions: z.string().max(1000).default(""),
@@ -200,6 +215,8 @@ export const imageJobConfigSchema = z.object({
   location: z.string().max(40).nullable().default(null),
   /** Complementary outfit pieces, identical across a session (see outfit.ts). */
   styling: z.string().max(600).nullable().default(null),
+  /** Upscale the render to this size afterwards (eco quality). */
+  upscaleTo: z.enum(IMAGE_SIZES).nullable().default(null),
 });
 export type ImageJobConfig = z.infer<typeof imageJobConfigSchema>;
 

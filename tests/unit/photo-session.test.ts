@@ -9,7 +9,7 @@ import {
 } from "@/lib/domain/photo-session";
 import { buildModelDirection } from "@/lib/domain/prompts";
 import { continuationDelayMs } from "@/lib/domain/jobs";
-import { photoSessionRequestSchema, shootStyleSchema } from "@/lib/domain/schemas";
+import { photoSessionRequestSchema, renderPlan, shootStyleSchema } from "@/lib/domain/schemas";
 
 describe("planPhotoSession", () => {
   it("is deterministic for the same seed and differs across seeds", () => {
@@ -102,6 +102,12 @@ describe("photoSessionRequestSchema", () => {
     expect(parsed.imageSize).toBe("2K");
     expect(photoSessionRequestSchema.safeParse({ ...base, imageSize: "1K" }).success).toBe(false);
     expect(parsed.instructions).toBe("");
+  });
+  it("accepts the eco quality and renders it at 1K upscaled to 2K", () => {
+    expect(photoSessionRequestSchema.parse({ ...base, imageSize: "eco" }).imageSize).toBe("eco");
+    expect(renderPlan("eco")).toEqual({ imageSize: "1K", upscaleTo: "2K" });
+    expect(renderPlan("2K")).toEqual({ imageSize: "2K", upscaleTo: null });
+    expect(renderPlan("4K")).toEqual({ imageSize: "4K", upscaleTo: null });
   });
   it("rejects unknown locations, empty locations and oversized sessions", () => {
     expect(photoSessionRequestSchema.safeParse({ ...base, locations: ["moon"] }).success).toBe(false);

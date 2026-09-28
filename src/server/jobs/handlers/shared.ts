@@ -168,14 +168,20 @@ export async function storeGeneratedImage(
 
 /** Long edge delivered for each requested size when the provider returns less. */
 const TARGET_LONG_EDGE: Record<string, number> = { "4K": 3840 };
+/** Long edge for an explicit upscale (eco quality: 1K render → 2K file). */
+const UPSCALE_LONG_EDGE: Record<string, number> = { "2K": 1920, "4K": 3840 };
 
 /**
  * When a size is requested that the model cannot produce natively (e.g. 4K
  * from a model capped near 2K), upscale with Lanczos resampling. This adds
  * pixels, not detail; results record `upscaled: true`.
  */
-export async function upscaleIfNeeded(image: BinaryImage, imageSize: string): Promise<{ image: BinaryImage; upscaled: boolean }> {
-  const target = TARGET_LONG_EDGE[imageSize];
+export async function upscaleIfNeeded(
+  image: BinaryImage,
+  imageSize: string,
+  upscaleTo?: string | null,
+): Promise<{ image: BinaryImage; upscaled: boolean }> {
+  const target = upscaleTo ? UPSCALE_LONG_EDGE[upscaleTo] : TARGET_LONG_EDGE[imageSize];
   if (!target) return { image, upscaled: false };
   const meta = await sharp(image.data).metadata();
   const longest = Math.max(meta.width ?? 0, meta.height ?? 0);

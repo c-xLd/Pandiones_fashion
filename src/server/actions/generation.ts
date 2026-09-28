@@ -15,6 +15,7 @@ import {
   type ImageJobConfig,
   type PhotoSessionRequest,
   type ReplicaJobConfig,
+  renderPlan,
   type ReplicaRequest,
   type ShootRequest,
 } from "@/lib/domain/schemas";
@@ -112,6 +113,7 @@ export async function createShoot(input: ShootRequest): Promise<ActionResult<{ b
           modelPersona: null,
           location: null,
           styling: null,
+          upscaleTo: null,
         };
         jobs.push({
           jobType: "image_generation",
@@ -224,7 +226,7 @@ export async function createPhotoSession(
           background: shot.background,
           lighting: shot.lighting,
           aspectRatio: req.aspectRatio,
-          imageSize: req.imageSize,
+          imageSize: renderPlan(req.imageSize).imageSize,
           variations: 1,
           creativeInstructions: req.instructions,
         }),
@@ -237,6 +239,7 @@ export async function createPhotoSession(
         modelPersona: persona,
         location: shot.location,
         styling,
+        upscaleTo: renderPlan(req.imageSize).upscaleTo,
       };
       return {
         jobType: "image_generation",
@@ -623,7 +626,7 @@ export async function createReplicaBatch(input: ReplicaRequest): Promise<ActionR
         scenePath,
         sceneThumbnailPath: paths.thumbnailFor(scenePath),
         aspectRatio: nearestAspectRatio(dims[i]!.width, dims[i]!.height),
-        imageSize: req.imageSize,
+        ...renderPlan(req.imageSize),
         productReferenceAssetIds: productRefIds,
         modelReferenceAssetIds: modelRefIds,
         instructions: req.instructions,

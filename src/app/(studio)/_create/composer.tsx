@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { ArrowUp, Check, ChevronDown, Cpu, Dices, ImagePlus, Layers, Loader2, MapPin, Ratio, RefreshCw, Shirt, Sparkles, Tags, Upload, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { IMAGE_ASPECT_RATIOS, IMAGE_ENGINES, type ImageAspectRatio, type ImageEngine } from "@/lib/domain/schemas";
+import { IMAGE_ASPECT_RATIOS, IMAGE_ENGINES, OUTPUT_QUALITIES, type ImageAspectRatio, type ImageEngine, type OutputQuality } from "@/lib/domain/schemas";
 import { GARMENT_TYPES, type GarmentType } from "@/lib/domain/outfit";
 import { SESSION_LOCATIONS, SESSION_SHOT_COUNTS, MAX_SESSION_LOCATIONS, type SessionLocation } from "@/lib/domain/photo-session";
 import { IMAGE_MIME_TYPES, validateDeclaredImage } from "@/lib/domain/files";
@@ -61,7 +61,7 @@ export function Composer({ products, models, disabledReason, initialProductId, i
   const [count, setCount] = useState<number>(6);
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("3:4");
   const [prompt, setPrompt] = useState("");
-  const [quality, setQuality] = useState<"2K" | "4K">("2K");
+  const [quality, setQuality] = useState<OutputQuality>("2K");
   const [garmentType, setGarmentType] = useState<"auto" | GarmentType>("auto");
   const [engine, setEngine] = useState<ImageEngine>("auto");
   // Casting: a new random model whose portrait is being generated / previewed.
@@ -418,12 +418,12 @@ export function Composer({ products, models, disabledReason, initialProductId, i
                 </Menu.Item>
               ))}
             </Chooser>
-            <Chooser icon={<Sparkles />} label={quality} ariaLabel={t.quality} compact>
-              {(["2K", "4K"] as const).map((q) => (
+            <Chooser icon={<Sparkles />} label={t.qualities[quality]} ariaLabel={t.quality} compact>
+              {OUTPUT_QUALITIES.map((q) => (
                 <Menu.Item key={q} className={itemClass} onSelect={() => setQuality(q)}>
                   <span className="min-w-0 flex-1">
-                    <span className="block">{q}</span>
-                    <span className="block text-xs text-muted-foreground">{q === "2K" ? t.quality2kHint : t.quality4kHint}</span>
+                    <span className="block">{t.qualities[q]}</span>
+                    <span className="block text-xs text-muted-foreground">{t.qualityHints[q]}</span>
                   </span>
                   {q === quality && <Check className="h-4 w-4" />}
                 </Menu.Item>

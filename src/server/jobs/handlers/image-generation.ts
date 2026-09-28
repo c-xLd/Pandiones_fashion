@@ -108,7 +108,7 @@ export const imageGenerationHandler: JobHandler = {
     }
 
     for (const generated of result.images.slice(0, 1)) {
-      const { image, upscaled } = await upscaleIfNeeded(generated, config.style.imageSize);
+      const { image, upscaled } = await upscaleIfNeeded(generated, config.style.imageSize, config.upscaleTo);
       const saved = await storeGeneratedImage(ctx.admin, job, image, {
         product_id: product.id,
         model_profile_id: profile?.id ?? null,

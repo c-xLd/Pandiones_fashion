@@ -136,7 +136,7 @@ export const replicaHandler: JobHandler = {
     }
     const generated = result.images[0];
     if (!generated) throw permanent("The provider returned no image.", "no_image");
-    const { image, upscaled } = await upscaleIfNeeded(generated, config.imageSize);
+    const { image, upscaled } = await upscaleIfNeeded(generated, config.imageSize, config.upscaleTo);
     await storeGeneratedImage(ctx.admin, job, image, {
       product_id: product.id,
       model_profile_id: profile?.id ?? null,
