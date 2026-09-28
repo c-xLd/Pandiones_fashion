@@ -37,8 +37,11 @@ export function getImageProvider(requestedModel?: string): ImageGenerationProvid
   return new GeminiImageProvider(cfg);
 }
 
-export function getVisionProvider(): VisionProvider {
-  return overrides.vision ?? new GeminiVisionProvider(geminiConfig());
+/** @param model optional analysis model override (e.g. a fallback with its own quota). */
+export function getVisionProvider(model?: string): VisionProvider {
+  if (overrides.vision) return overrides.vision;
+  const cfg = geminiConfig();
+  return new GeminiVisionProvider(model ? { ...cfg, analysisModel: model } : cfg);
 }
 
 export function getVideoProvider(): VideoGenerationProvider {

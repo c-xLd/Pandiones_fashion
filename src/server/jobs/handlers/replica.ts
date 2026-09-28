@@ -23,6 +23,9 @@ import {
   upscaleIfNeeded,
 } from "./shared";
 
+/** Vision model tried when the analysis model's quota is exhausted (verified available on the free tier). */
+const SCENE_FALLBACK_MODEL = "gemini-flash-lite-latest";
+
 /**
  * Applies one reference photo's photographic setup (camera, framing, pose,
  * light, background, style) to the chosen model wearing the chosen product.
@@ -55,13 +58,20 @@ export const replicaHandler: JobHandler = {
     if (!sceneImage) throw permanent("Reference photo is missing.", "reference_missing");
 
     // 1) Photographic setup of the reference, as text only.
-    const vision = getVisionProvider();
-    const analysis = await vision.generateStructured({
+    const request = {
       prompt: SCENE_ANALYSIS_PROMPT,
       images: [{ ...sceneImage, label: "reference photo" }],
       jsonSchema: sceneAnalysisJsonSchema,
       signal: ctx.signal,
-    });
+    };
+    let analysis;
+    try {
+      analysis = await getVisionProvider().generateStructured(request);
+    } catch (error) {
+      // Free tiers have small per-model daily limits; a lighter model has its own quota.
+      if (!(error instanceof ProviderError) || error.code !== "http_429") throw error;
+      analysis = await getVisionProvider(SCENE_FALLBACK_MODEL).generateStructured(request);
+    }
     await recordUsage(ctx.admin, {
       job,
       provider: analysis.provider,
