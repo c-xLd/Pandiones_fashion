@@ -152,11 +152,11 @@ export const en = {
   replica: {
     metaTitle: "Replica",
     title: "Replica studio",
-    description: "Upload your product, your model and up to 4 reference photos. Each reference is recreated 1:1 — same pose, framing, background and light — with your model wearing your product. References are never mixed.",
+    description: "Upload your product, your model and up to 4 reference photos. Each reference's photography is analysed — camera angle, framing, pose, light, background and style. Clothing, fabric, colours, patterns and accessories from the reference are never used; only your product and your model. One output per reference.",
     product: "Product",
     uploadProduct: "Upload product",
     model: "Model",
-    keepPerson: "Keep the person in the reference",
+    keepPerson: "Random model",
     uploadModel: "Upload model",
     references: "Reference photos",
     referencesHint: "Up to 4 photos. One separate replica is generated for each.",

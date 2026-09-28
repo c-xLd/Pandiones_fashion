@@ -1,7 +1,11 @@
 import "server-only";
 import { replicaJobConfigSchema } from "@/lib/domain/schemas";
 import { buildReplicaPrompt } from "@/lib/domain/prompts";
-import { getImageProvider } from "@/lib/providers/registry";
+import { parseStructuredOutput, StructuredOutputError } from "@/lib/domain/analysis";
+import { SCENE_ANALYSIS_PROMPT, sanitizeScene, sceneAnalysisJsonSchema, sceneAnalysisSchema, sceneToPrompt } from "@/lib/domain/scene";
+import { randomModelPersona } from "@/lib/domain/photo-session";
+import { ProviderError } from "@/lib/domain/jobs";
+import { getImageProvider, getVisionProvider } from "@/lib/providers/registry";
 import type { LabelledImage } from "@/lib/providers/types";
 import type { JobHandler } from "../worker";
 import { recordUsage, tokenCost } from "../usage";
@@ -20,9 +24,12 @@ import {
 } from "./shared";
 
 /**
- * Recreates one reference photo 1:1 (pose, framing, background, light) with
- * the chosen model wearing the chosen product. Inputs, in order: the scene,
- * the garment view(s), the model reference (+ a face close-up if there is room).
+ * Applies one reference photo's photographic setup (camera, framing, pose,
+ * light, background, style) to the chosen model wearing the chosen product.
+ * Step 1: a vision model describes the setup as text, without any wardrobe
+ * (filtered again by stripWardrobe). Step 2: the image model receives only
+ * that text plus the garment view(s) and the model reference (+ face
+ * close-up) — never the reference image, so its clothing cannot leak.
  */
 export const replicaHandler: JobHandler = {
   async run(job, ctx) {
@@ -36,30 +43,58 @@ export const replicaHandler: JobHandler = {
     const product = await loadProduct(ctx.admin, job);
     const profile = await loadModelProfile(ctx.admin, job, job.model_profile_id);
     const modelRefIds = profile ? config.modelReferenceAssetIds.slice(0, 1) : [];
-    const productRefIds = config.productReferenceAssetIds.slice(0, Math.max(1, Math.min(2, limit - 1 - modelRefIds.length)));
+    const productRefIds = config.productReferenceAssetIds.slice(0, Math.max(1, Math.min(2, limit - modelRefIds.length - (modelRefIds.length ? 1 : 0))));
     const productAssets = await loadProductAssets(ctx.admin, job, product.id, productRefIds);
     const modelAssets = profile ? await loadModelAssets(ctx.admin, job, profile.id, modelRefIds) : [];
 
-    const [[scene], garments, models] = await Promise.all([
+    const [[sceneImage], garments, models] = await Promise.all([
       downloadReferences(ctx.admin, [config.scenePath]),
       downloadReferences(ctx.admin, productAssets.map((a) => a.storage_path)),
       downloadReferences(ctx.admin, modelAssets.map((a) => a.storage_path)),
     ]);
-    if (!scene) throw permanent("Reference photo is missing.", "reference_missing");
-    const face = models[0] && 1 + garments.length + models.length < limit ? await faceCloseUp(models[0]) : null;
-    const modelImages = face ? [...models, face] : models;
-    await ctx.progress(20);
+    if (!sceneImage) throw permanent("Reference photo is missing.", "reference_missing");
 
+    // 1) Photographic setup of the reference, as text only.
+    const vision = getVisionProvider();
+    const analysis = await vision.generateStructured({
+      prompt: SCENE_ANALYSIS_PROMPT,
+      images: [{ ...sceneImage, label: "reference photo" }],
+      jsonSchema: sceneAnalysisJsonSchema,
+      signal: ctx.signal,
+    });
+    await recordUsage(ctx.admin, {
+      job,
+      provider: analysis.provider,
+      model: analysis.resolvedModel ?? analysis.model,
+      requestId: analysis.requestId,
+      usage: analysis.usage,
+      units: { requests: 1, images_in: 1 },
+      cost: tokenCost(analysis.model, analysis.resolvedModel, analysis.usage),
+      succeeded: true,
+    });
+    let sceneText: string;
+    try {
+      sceneText = sceneToPrompt(sanitizeScene(parseStructuredOutput(sceneAnalysisSchema, analysis.text)));
+    } catch (error) {
+      if (error instanceof StructuredOutputError) throw new ProviderError(error.message, "transient", "invalid_output");
+      throw error;
+    }
+    if (!sceneText) throw new ProviderError("Scene analysis returned nothing usable.", "transient", "invalid_output");
+    await ctx.progress(35);
+
+    // 2) Generate from the text setup + garment + model references only.
+    const face = models[0] && garments.length + models.length < limit ? await faceCloseUp(models[0]) : null;
+    const modelImages = face ? [...models, face] : models;
     const references: LabelledImage[] = [
-      { ...scene, label: "reference photo to recreate" },
       ...garments.map((img, i) => ({ ...img, label: `product reference, ${productAssets[i]?.role ?? "other"} view` })),
       ...modelImages.map((img, i) => ({ ...img, label: face && i === modelImages.length - 1 ? "model face close-up" : "model identity reference" })),
     ];
     const prompt = buildReplicaPrompt({
       product: productContext(product),
-      scene: 1,
-      garments: garments.map((_, i) => 2 + i),
-      models: modelImages.map((_, i) => 2 + garments.length + i),
+      scene: sceneText,
+      garments: garments.map((_, i) => 1 + i),
+      models: modelImages.map((_, i) => 1 + garments.length + i),
+      persona: profile ? null : randomModelPersona(job.batch_id ?? job.id),
       format: provider.promptFormat ?? "detailed",
       instructions: config.instructions,
     });
@@ -96,6 +131,7 @@ export const replicaHandler: JobHandler = {
       settings: {
         kind: "replica",
         scenePath: config.scenePath,
+        sceneAnalysis: sceneText,
         sceneThumbnailPath: config.sceneThumbnailPath,
         aspectRatio: config.aspectRatio,
         imageSize: config.imageSize,

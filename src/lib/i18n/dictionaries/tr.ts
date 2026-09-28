@@ -150,11 +150,11 @@ export const tr: typeof en = {
   replica: {
     metaTitle: "Birebir",
     title: "Birebir üretim",
-    description: "Ürününüzü, modelinizi ve en fazla 4 referans görseli yükleyin. Her referans birebir yeniden üretilir: aynı poz, kadraj, arka plan ve ışık; kişi sizin modeliniz, kıyafet sizin ürününüz olur. Referanslar birleştirilmez.",
+    description: "Ürününüzü, modelinizi ve en fazla 4 referans görseli yükleyin. Her referansın çekim estetiği analiz edilir: kamera açısı, kadraj, poz, ışık, arka plan ve fotoğraf stili. Referanstaki kıyafet, kumaş, renk, desen ve aksesuarlar alınmaz; yalnızca sizin ürününüz ve modeliniz kullanılır. Her referans için ayrı bir çıktı üretilir.",
     product: "Ürün",
     uploadProduct: "Ürün yükle",
     model: "Model",
-    keepPerson: "Referanstaki kişi kalsın",
+    keepPerson: "Rastgele model",
     uploadModel: "Model yükle",
     references: "Referans görseller",
     referencesHint: "En fazla 4 görsel. Her biri için ayrı bir birebir çıktı üretilir.",

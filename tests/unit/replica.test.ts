@@ -25,18 +25,19 @@ describe("replica helpers", () => {
 });
 
 describe("buildReplicaPrompt", () => {
-  it("recreates the scene and swaps only the person and the garment (FLUX numbering)", () => {
-    const text = buildReplicaPrompt({ product, scene: 1, garments: [2, 3], models: [4], format: "concise" });
-    expect(text).toContain("Recreate image 0 as faithfully as possible");
-    expect(text).toContain("the woman in image 3");
-    expect(text).toContain("garment shown in image 1 and image 2 (Lace bra set)");
-    expect(text).toContain("Do not combine it with other scenes");
+  it("uses the text setup, the exact garment and the model — no reference image (FLUX numbering)", () => {
+    const text = buildReplicaPrompt({ product, scene: "Pose: seated on the floor.", garments: [1, 2], models: [3, 4], format: "concise" });
+    expect(text).toContain("recreating this exact photographic setup: Pose: seated on the floor.");
+    expect(text).toContain("the woman in image 2 and image 3");
+    expect(text).toContain("ONLY the garment shown in image 0 and image 1 (Lace bra set)");
+    expect(text).toContain("do not add any other clothing, hosiery, jewellery or accessories");
+    expect(text).not.toMatch(/Recreate image/);
     expect(text).toContain("21+");
   });
-  it("keeps the reference person when no model is chosen (Gemini numbering)", () => {
-    const text = buildReplicaPrompt({ product, scene: 1, garments: [2], models: [], format: "detailed", instructions: "warmer light" });
-    expect(text).toContain("Keep the same person as in Image #1");
-    expect(text).toContain("Image #2");
+  it("uses a persona when no model is chosen (Gemini numbering)", () => {
+    const text = buildReplicaPrompt({ product, scene: "Lighting: soft.", garments: [1], models: [], persona: "a beautiful professional female fashion model", format: "detailed", instructions: "warmer light" });
+    expect(text).toContain("fictional person: a beautiful professional female fashion model");
+    expect(text).toContain("Image #1");
     expect(text).toContain("warmer light");
   });
 });

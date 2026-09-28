@@ -230,38 +230,38 @@ export function buildConciseProductShotPrompt(input: {
 }
 
 /**
- * Replica: recreate a reference photo 1:1 (pose, framing, background, light)
- * while swapping in the chosen model and the exact product. Image numbering
- * follows the provider: 0-based "image N" (FLUX) or "Image #N" (Gemini).
+ * Replica: apply a reference photo's photographic setup (analysed as text,
+ * wardrobe removed — see scene.ts) to the chosen model wearing the exact
+ * product. The reference image itself is not an input, so nothing from its
+ * clothing can leak. Image numbering follows the provider: 0-based "image N"
+ * (FLUX) or "Image #N" (Gemini), positions are 1-based here.
  */
 export function buildReplicaPrompt(input: {
   product: ProductContext;
-  /** Positions in the request (1-based) of the scene, garment and model images. */
-  scene: number;
+  /** Sanitized scene description (sceneToPrompt). */
+  scene: string;
   garments: number[];
   models: number[];
+  /** Fictional model description when no model reference is used. */
+  persona?: string | null;
   format: "detailed" | "concise";
   instructions?: string;
 }): string {
   const img = (n: number) => (input.format === "concise" ? `image ${n - 1}` : `Image #${n}`);
   const list = (ns: number[]) => ns.map(img).join(" and ");
-  const scene = img(input.scene);
   const parts: string[] = [];
-  parts.push(
-    `Recreate ${scene} as faithfully as possible: exactly the same pose and body position, hand placement, head angle, camera angle, framing and crop, background, props, lighting and colour grading.`,
-  );
-  parts.push("Only these things change:");
+  parts.push("Photorealistic fashion photograph recreating this exact photographic setup:");
+  parts.push(input.scene);
   if (input.models.length) {
     parts.push(
-      `1) The person becomes the woman in ${list(input.models)}: keep her face unchanged (same face shape, eyes, eyebrows, nose, lips, skin tone and complexion) and her hair colour and style; do not beautify, age or alter her features.`,
+      `The model is exactly the woman in ${list(input.models)}: keep her face unchanged (same face shape, eyes, eyebrows, nose, lips, skin tone and complexion) and her hair colour and style; do not beautify, age or alter her features.`,
     );
-  } else {
-    parts.push(`1) Keep the same person as in ${scene}.`);
+  } else if (input.persona) {
+    parts.push(`The model is a fictional person: ${input.persona}. Do not resemble any real or famous person.`);
   }
   parts.push(
-    `2) She wears the garment shown in ${list(input.garments)} (${input.product.title}) in place of the corresponding garment in ${scene}, reproduced exactly: identical colours, fabric texture, pattern and print placement, lace, straps, seams, closures, trims, cut and length; nothing added, removed or redesigned. All other clothing, shoes and accessories stay as in ${scene}.`,
+    `She wears ONLY the garment shown in ${list(input.garments)} (${input.product.title}), reproduced exactly as photographed: identical colours, fabric texture, pattern and print placement, lace, straps, seams, closures, trims, cut and length. Do not redesign it, add or remove elements, and do not add any other clothing, hosiery, jewellery or accessories that are not visible in ${list(input.garments)}.`,
   );
-  parts.push(`Everything else must stay identical to ${scene}. Do not combine it with other scenes.`);
   if (input.instructions) parts.push(input.instructions);
   parts.push(REALISM);
   parts.push("Tasteful, non-explicit fashion photograph. The model is an adult (21+).");
