@@ -1,4 +1,4 @@
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { isImageGenerationConfigured } from "@/lib/env";
@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/studio/page-header";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 import { MediaTile } from "../_create/media-tile";
 import { FailedTile } from "../_create/failed-tile";
+import { ActiveTile } from "../_create/active-tile";
 import { ReplicaStudio } from "./replica-studio";
 
 export const generateMetadata = pageMetadata((d) => d.replica.metaTitle);
@@ -118,10 +119,14 @@ export default async function ReplicaPage() {
                   ) : j.status === "failed" || j.status === "cancelled" ? (
                     <FailedTile jobId={j.id} aspect={aspect(j)} reason={jobErrorLabel(d, j.error_code) ?? j.error_code ?? ""} canEdit={canEdit} />
                   ) : (
-                    <div className="flow-shimmer mb-3 flex flex-col items-center justify-center gap-2 rounded-2xl border" style={{ aspectRatio: aspect(j) }}>
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">{j.status === "queued" ? d.create.queued : d.create.generating}</span>
-                    </div>
+                    <ActiveTile
+                      jobId={j.id}
+                      aspect={aspect(j)}
+                      status={j.status as "queued" | "processing"}
+                      progress={j.progress}
+                      label=""
+                      canEdit={canEdit}
+                    />
                   )}
                 </div>
               </div>

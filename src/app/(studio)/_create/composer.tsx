@@ -15,6 +15,7 @@ import { snapshotFiles, uploadFile } from "@/components/studio/upload-client";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n/client";
+import { useSelection } from "./selection";
 import { fmt } from "@/lib/i18n/config";
 
 export interface ComposerProps {
@@ -40,6 +41,7 @@ export function Composer({ products, models, disabledReason, initialProductId, i
   const router = useRouter();
   const { d } = useI18n();
   const t = d.create;
+  const selection = useSelection();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -212,10 +214,13 @@ export function Composer({ products, models, disabledReason, initialProductId, i
     });
   }
 
+  // In selection mode the selection bar takes this place.
+  if (selection?.selecting) return null;
+
   const locationsLabel = locations.length === 1 ? locationName(locations[0] as SessionLocation) : fmt(t.locationsValue, { n: locations.length });
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-3 sm:px-4 sm:pb-5">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom))] z-30 px-3 pb-3 sm:px-4 lg:bottom-0 lg:pb-5">
       <div className="pointer-events-auto mx-auto max-w-3xl">
         {casting && !casting.dismissed && (
           <div className="mb-2 flex items-center gap-3 rounded-3xl border bg-card/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl">

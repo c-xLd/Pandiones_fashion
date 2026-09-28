@@ -73,8 +73,33 @@
   * {
     @apply border-border;
   }
+  html {
+    /* Height of the mobile bottom tab bar; 0 on desktop. */
+    --tabbar-h: 4rem;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+  @media (min-width: 64rem) {
+    html {
+      --tabbar-h: 0rem;
+    }
+  }
   body {
     @apply bg-background text-foreground antialiased;
+    overscroll-behavior-y: none;
+  }
+  /* iOS zooms into inputs below 16px; keep them at 16px on phones. */
+  @media (max-width: 63.99rem) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
   }
 }
 
@@ -120,4 +145,21 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .flow-drop { animation: none; }
+}
+
+/* Page enter animation (studio template re-mounts on navigation). */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.page-in {
+  animation: page-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* Bottom sheet on phones. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-in { animation: none; }
 }

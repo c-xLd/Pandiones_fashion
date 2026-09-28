@@ -81,6 +81,10 @@ export const replicaHandler: JobHandler = {
     }
     if (!sceneText) throw new ProviderError("Scene analysis returned nothing usable.", "transient", "invalid_output");
     await ctx.progress(35);
+    // Stop before the (quota-consuming) image call if the user cancelled meanwhile.
+    if (await ctx.isCancelRequested()) {
+      return { status: "cancelled", reason: "Cancelled by user before image generation" };
+    }
 
     // 2) Generate from the text setup + garment + model references only.
     const face = models[0] && garments.length + models.length < limit ? await faceCloseUp(models[0]) : null;

@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Download, ExternalLink, Loader2, Play, Trash2 } from "lucide-react";
+import { Check, Download, ExternalLink, Loader2, Play, Trash2 } from "lucide-react";
+import { useSelection } from "./selection";
 import { deleteResults, getResultDownloadUrl } from "@/server/actions/generation";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,9 @@ export function MediaTile({ resultId, href, kind, url, alt, aspect, title, subti
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"download" | "delete" | null>(null);
   const [, start] = useTransition();
+  const selection = useSelection();
+  const selecting = Boolean(selection?.selecting);
+  const isSelected = Boolean(selection?.selected.has(resultId));
 
   function download() {
     setError(null);
@@ -78,6 +82,7 @@ export function MediaTile({ resultId, href, kind, url, alt, aspect, title, subti
         aria-label={title}
         aria-expanded={open}
         onClick={() => {
+          if (selecting) return selection?.toggle(resultId);
           setOpen((v) => !v);
           setConfirming(false);
         }}
@@ -102,7 +107,7 @@ export function MediaTile({ resultId, href, kind, url, alt, aspect, title, subti
       <div
         className={cn(
           "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-3 pt-10 transition-opacity duration-200",
-          open ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          open && !selecting ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
       >
         <p className="truncate text-sm font-medium text-white">{title}</p>
@@ -111,7 +116,19 @@ export function MediaTile({ resultId, href, kind, url, alt, aspect, title, subti
         {error ? <p className="mt-1 text-xs text-red-300">{error}</p> : null}
       </div>
 
-      {open && (
+      {selecting && (
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white/90 shadow",
+            isSelected ? "bg-primary text-primary-foreground" : "bg-black/30",
+          )}
+        >
+          {isSelected && <Check className="h-4 w-4" />}
+        </span>
+      )}
+      {selecting && isSelected && <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl ring-4 ring-inset ring-primary/80" />}
+      {open && !selecting && (
         <div className="absolute inset-x-2 top-2 flex flex-wrap justify-end gap-1.5">
           {confirming ? (
             <>

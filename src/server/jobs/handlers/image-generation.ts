@@ -71,6 +71,10 @@ export const imageGenerationHandler: JobHandler = {
       styling: config.styling,
     });
 
+    // Stop before the (quota-consuming) provider call if the user cancelled meanwhile.
+    if (await ctx.isCancelRequested()) {
+      return { status: "cancelled", reason: "Cancelled by user before generation" };
+    }
     let result;
     try {
       result = await provider.generateImage({

@@ -647,3 +647,47 @@ export async function createReplicaBatch(input: ReplicaRequest): Promise<ActionR
     return { batchId: rows[0]?.batch_id ?? batchId, jobCount: rows.length };
   });
 }
+
+const cancelJobsSchema = z.object({ jobIds: z.array(z.uuid()).max(200).optional(), allActive: z.boolean().default(false) });
+
+/**
+ * Stop generation jobs to save quota: queued jobs are cancelled at once (no
+ * provider call is made); a job already calling the provider finishes that
+ * call but its output is discarded. Uses cancel_job(), which checks the
+ * caller's role for each job.
+ */
+export async function cancelJobs(input: z.input<typeof cancelJobsSchema>): Promise<ActionResult<{ cancelled: number; stopping: number }>> {
+  return runAction("cancelJobs", async () => {
+    const ctx = await requireOrgContext("editor");
+    await enforceRateLimit("mutate", ctx.userId);
+    const data = cancelJobsSchema.parse(input);
+    const org = ctx.org.organizationId;
+    let ids = data.jobIds ?? [];
+    if (data.allActive) {
+      const rows = check(
+        await ctx.supabase
+          .from("generation_jobs")
+          .select("id")
+          .eq("organization_id", org)
+          .in("job_type", ["image_generation", "model_portrait", "replica_generation", "video_generation"])
+          .in("status", ["queued", "processing"])
+          .limit(200),
+        "Load active jobs",
+      ) as { id: string }[];
+      ids = rows.map((r) => r.id);
+    }
+    let cancelled = 0;
+    let stopping = 0;
+    for (const id of ids) {
+      const { data: status, error } = await ctx.supabase.rpc("cancel_job", { p_job_id: id });
+      if (error) continue;
+      if (status === "cancelled") cancelled++;
+      else if (status === "processing") stopping++;
+    }
+    await audit({ organizationId: org, actorId: ctx.userId, action: "jobs.cancelled", entityType: "generation_job", entityId: ids[0] ?? null, metadata: { requested: ids.length, cancelled, stopping } });
+    revalidatePath("/");
+    revalidatePath("/replica");
+    revalidatePath("/jobs");
+    return { cancelled, stopping };
+  });
+}

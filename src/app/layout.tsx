@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { getI18n } from "@/lib/i18n/server";
 import { I18nProvider } from "@/lib/i18n/client";
@@ -12,8 +12,21 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { default: d.meta.appName, template: `%s · ${d.meta.appName}` },
     description: d.meta.description,
     robots: { index: false, follow: false },
+    applicationName: d.meta.appName,
+    appleWebApp: { capable: true, title: d.common.brand, statusBarStyle: "black-translucent" },
+    icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
+    formatDetection: { telephone: false },
   };
 }
+
+/** Full-bleed on notched phones; browser UI tinted like the app. */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0e0e12",
+  colorScheme: "dark",
+};
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const { locale, d } = await getI18n();

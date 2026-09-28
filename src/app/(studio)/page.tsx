@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { after } from "next/server";
 import { kickWorker } from "@/server/jobs/kick";
-import { Clapperboard, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { requirePageContext, roleAtLeast } from "@/server/context";
 import { signUrls } from "@/server/storage";
 import { budgetState } from "@/lib/domain/costs";
@@ -18,6 +18,8 @@ import { QcBadge, StatusBadge } from "@/components/studio/status-badge";
 import { AutoRefresh } from "@/components/studio/auto-refresh";
 import { MediaTile } from "./_create/media-tile";
 import { ClearFailedButton, FailedTile } from "./_create/failed-tile";
+import { ActiveTile, StopAllButton } from "./_create/active-tile";
+import { SelectionBar, SelectionProvider, SelectToggle } from "./_create/selection";
 import { Composer } from "./_create/composer";
 
 export const generateMetadata = pageMetadata((d) => d.create.metaTitle);
@@ -44,7 +46,14 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   let results = db.from("generation_results").select("*, products(sku)").eq("organization_id", org).order("created_at", { ascending: false }).limit(GALLERY_LIMIT);
   if (kind) results = results.eq("kind", kind);
 
-  const [resultsRes, activeRes, failedRes, pendingReview, productsRes, modelsRes, orgRow, spend] = await Promise.all([
+  const activeCountQuery = db
+    .from("generation_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", org)
+    .in("job_type", [...GENERATION_TYPES])
+    .in("status", ["queued", "processing"]);
+  const [activeCountRes, resultsRes, activeRes, failedRes, pendingReview, productsRes, modelsRes, orgRow, spend] = await Promise.all([
+    activeCountQuery,
     results,
     db
       .from("generation_jobs")
@@ -135,7 +144,8 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   ] as const;
 
   return (
-    <div className="pb-64">
+    <SelectionProvider>
+    <div className="pb-72 lg:pb-64">
       {sp.error === "forbidden" && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{d.dashboard.forbidden}</AlertDescription>
@@ -200,7 +210,9 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                 {fmt(t.awaitingReview, { n: pendingReview.count ?? 0 })}
               </Link>
             )}
+            {canEdit && active.length > 0 && <StopAllButton count={activeCountRes.count ?? active.length} />}
             {canEdit && failed.length > 0 && !kind && <ClearFailedButton count={failed.length} />}
+            {rows.length > 0 && <SelectToggle />}
             <div className="ml-auto">
               <AutoRefresh active={active.length > 0} />
             </div>
@@ -213,23 +225,16 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
               {active
                 .filter((j) => !kind || kind === (j.job_type === "video_generation" ? "video" : "image"))
                 .map((j) => (
-                    <Link
-                      key={j.id}
-                      href={`/jobs?status=active`}
-                      className="flow-shimmer relative mb-3 flex break-inside-avoid flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border text-center"
-                      style={{ aspectRatio: jobAspect(j.config, j.job_type) }}
-                    >
-                      {j.job_type === "video_generation" ? <Clapperboard className="h-5 w-5 text-muted-foreground" /> : <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
-                      <span className="text-sm font-medium">{j.status === "queued" ? t.queued : t.generating}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {[shotLabel(d, ((j.config.style ?? {}) as { shotType?: string }).shotType), locationLabel(j.config)].filter(Boolean).join(" · ")}
-                      </span>
-                      {j.status === "processing" && j.progress > 0 && (
-                        <span className="absolute inset-x-4 bottom-4 h-1 overflow-hidden rounded-full bg-white/10">
-                          <span className="flow-gradient block h-full" style={{ width: `${Math.min(100, j.progress)}%` }} />
-                        </span>
-                      )}
-                    </Link>
+                  <ActiveTile
+                    key={j.id}
+                    jobId={j.id}
+                    aspect={jobAspect(j.config, j.job_type)}
+                    status={j.status as "queued" | "processing"}
+                    progress={j.progress}
+                    video={j.job_type === "video_generation"}
+                    label={[shotLabel(d, ((j.config.style ?? {}) as { shotType?: string }).shotType), locationLabel(j.config)].filter(Boolean).join(" · ")}
+                    canEdit={canEdit}
+                  />
                 ))}
               {!kind &&
                 failed.map((j) => (
@@ -293,6 +298,8 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         initialProductId={sp.productId}
         initialModelId={sp.modelId}
       />
+      <SelectionBar canDelete={canDelete} />
     </div>
+    </SelectionProvider>
   );
 }
