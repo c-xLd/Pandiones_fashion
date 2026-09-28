@@ -978,7 +978,7 @@ export const tr: typeof en = {
   },
   jobErrors: {
     blocked: "Sağlayıcının güvenlik filtreleri tarafından engellendi.",
-    safety_filtered: "Sağlayıcının güvenlik filtreleri çıktıyı vermedi. İstemi veya referansları düzenleyin.",
+    safety_filtered: "Sağlayıcının güvenlik filtresi görseli engelledi. Transparan iç giyim gibi ürünler bir model üzerinde genellikle bu yüzden üretilemez.",
     no_image: "Sağlayıcı görsel döndürmedi.",
     no_video: "Sağlayıcı video döndürmeden tamamladı.",
     invalid_output: "Model doğrulamadan geçmeyen bir çıktı döndürdü.",

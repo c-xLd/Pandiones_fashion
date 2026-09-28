@@ -56,6 +56,9 @@ describe("classifyCloudflareError", () => {
     expect(classifyCloudflareError(503, null)).toMatchObject({ classification: "transient", code: "http_503" });
     expect(classifyCloudflareError(401, { errors: [{ code: 10000, message: "Authentication error" }] })).toMatchObject({ classification: "permanent", code: "http_401" });
     expect(classifyCloudflareError(400, { errors: [{ message: "Input prompt contains NSFW content" }] })).toMatchObject({ classification: "permanent", code: "safety_filtered" });
+    expect(
+      classifyCloudflareError(400, { errors: [{ code: 3030, message: "AiError: AiError: Your output has been flagged. Please choose another prompt / input image combination" }] }),
+    ).toMatchObject({ classification: "permanent", code: "safety_filtered" });
   });
 });
 

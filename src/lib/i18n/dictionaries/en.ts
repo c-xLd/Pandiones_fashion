@@ -980,7 +980,7 @@ export const en = {
   },
   jobErrors: {
     blocked: "Blocked by the provider's safety filters.",
-    safety_filtered: "Withheld by the provider's safety filters. Adjust the prompt or references.",
+    safety_filtered: "The provider's safety filter blocked the image. Sheer lingerie on a model is usually blocked for this reason.",
     no_image: "The provider returned no image.",
     no_video: "The provider finished without returning a video.",
     invalid_output: "The model returned output that failed validation.",

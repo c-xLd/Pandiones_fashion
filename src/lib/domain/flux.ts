@@ -87,7 +87,8 @@ export function classifyCloudflareError(
   if (/daily free allocation|neurons? (limit|quota)|upgrade to .*workers paid/i.test(message)) {
     return { classification: "permanent", code: "provider_daily_quota", message };
   }
-  if (/nsfw|unsafe|safety|content policy/i.test(message)) {
+  // 3030 "Your output has been flagged": the provider's safety filter rejected the image.
+  if (/nsfw|unsafe|safety|content policy|flagged|\b3030\b/i.test(message)) {
     return { classification: "permanent", code: "safety_filtered", message };
   }
   if (status === 429 || status === 408 || status >= 500) {
