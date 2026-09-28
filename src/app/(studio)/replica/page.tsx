@@ -53,14 +53,16 @@ export default async function ReplicaPage() {
   }));
   const models = ((modelsRes.data ?? []) as M[]).filter((m) => m.model_profile_assets.length > 0);
   const primary = (m: M) => m.model_profile_assets.find((a) => a.is_primary) ?? m.model_profile_assets[0];
-  const jobs = (jobsRes.data ?? []) as Pick<JobRow, "id" | "status" | "progress" | "error_code" | "config" | "created_at">[];
+  const allJobs = (jobsRes.data ?? []) as Pick<JobRow, "id" | "status" | "progress" | "error_code" | "config" | "created_at">[];
 
-  const jobIds = jobs.map((j) => j.id);
+  const jobIds = allJobs.map((j) => j.id);
   const resultsRes = jobIds.length
     ? await db.from("generation_results").select("*, products(sku)").eq("organization_id", org).in("job_id", jobIds)
     : { data: [] };
   const results = (resultsRes.data ?? []) as (ResultRow & { products: { sku: string } | null })[];
   const resultByJob = new Map(results.map((r) => [r.job_id, r]));
+  // A succeeded job whose photo was deleted has nothing left to show.
+  const jobs = allJobs.filter((j) => j.status !== "succeeded" || resultByJob.has(j.id));
 
   const sceneThumb = (j: (typeof jobs)[number]) => (j.config as { sceneThumbnailPath?: string | null }).sceneThumbnailPath ?? null;
   const urls = await signUrls(db, [

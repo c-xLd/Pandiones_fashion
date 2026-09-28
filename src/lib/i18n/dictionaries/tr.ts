@@ -178,6 +178,7 @@ export const tr: typeof en = {
   },
   tabs: { library: "Kütüphane", menu: "Menü" },
   create: {
+    stoppingHint: "Sağlayıcıya giden istek bitince durur; sonucu atılır.",
     cancelJob: "İptal",
     stopping: "Durduruluyor…",
     stopAll: "Tümünü durdur ({n})",

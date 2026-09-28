@@ -32,12 +32,14 @@ export function ActiveTile({
   const t = d.create;
   const [pending, start] = useTransition();
   const [stopped, setStopped] = useState<"cancelled" | "stopping" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function cancel() {
     start(async () => {
       const res = await cancelJobs({ jobIds: [jobId] });
-      if (!res.ok) return;
-      setStopped(res.data.cancelled ? "cancelled" : "stopping");
+      if (!res.ok) return setError(res.error);
+      // Neither cancelled nor stopping: the job had already finished.
+      setStopped(res.data.stopping ? "stopping" : "cancelled");
       router.refresh();
     });
   }
@@ -62,6 +64,8 @@ export function ActiveTile({
       {video ? <Clapperboard className="h-5 w-5 text-muted-foreground" /> : <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
       <span className="text-sm font-medium">{stopped === "stopping" ? t.stopping : status === "queued" ? t.queued : t.generating}</span>
       {label ? <span className="px-3 text-xs text-muted-foreground">{label}</span> : null}
+      {stopped === "stopping" && <span className="px-3 text-[11px] text-muted-foreground">{t.stoppingHint}</span>}
+      {error && <span className="px-3 text-xs text-destructive">{error}</span>}
       {status === "processing" && progress > 0 && !stopped && (
         <span className="absolute inset-x-4 bottom-4 h-1 overflow-hidden rounded-full bg-white/10">
           <span className="flow-gradient block h-full" style={{ width: `${Math.min(100, progress)}%` }} />

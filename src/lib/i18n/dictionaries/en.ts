@@ -180,6 +180,7 @@ export const en = {
   },
   tabs: { library: "Library", menu: "Menu" },
   create: {
+    stoppingHint: "Stops when the current provider request returns; its output is discarded.",
     cancelJob: "Cancel",
     stopping: "Stopping…",
     stopAll: "Stop all ({n})",
