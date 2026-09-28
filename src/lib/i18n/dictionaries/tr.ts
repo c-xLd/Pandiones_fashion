@@ -184,7 +184,7 @@ export const tr: typeof en = {
     engineHints: {
       auto: "En iyi ücretsiz seçenek (şu an Standart)",
       standard: "FLUX.2 klein 4B · ticari kullanıma uygun · günde çok sayıda ücretsiz",
-      high: "FLUX.2 klein 9B · daha net, daha iyi yüzler · günde ~5 ücretsiz · ticari olmayan lisans",
+      high: "FLUX.2 klein 9B · daha net, daha iyi yüzler · günde ~5 ücretsiz · kişisel kullanım için uygun (ticari olmayan lisans)",
     },
     castModel: "Yeni model oluştur",
     castModelHint: "Önce portresini görün; her fotoğrafta aynı yüz korunur",

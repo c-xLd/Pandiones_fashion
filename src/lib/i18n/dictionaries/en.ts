@@ -186,7 +186,7 @@ export const en = {
     engineHints: {
       auto: "Best free option (currently Standard)",
       standard: "FLUX.2 klein 4B · commercial use allowed · many photos per day free",
-      high: "FLUX.2 klein 9B · sharper, better faces · about 5 photos/day free · non-commercial licence",
+      high: "FLUX.2 klein 9B · sharper, better faces · about 5 photos/day free · fine for personal use (non-commercial licence)",
     },
     castModel: "Cast a new model",
     castModelHint: "See her portrait first; the same face is kept in every photo",
